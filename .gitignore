@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+*.pyo
+dist/*.xlsx
+dist/*.xlsm
+!dist/.gitkeep
+.venv/
+.idea/
+.vscode/
+*.bak
+~$*
