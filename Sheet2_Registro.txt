@@ -1,0 +1,21 @@
+Option Explicit
+
+Private Sub Worksheet_SelectionChange(ByVal Target As Range)
+    If Target.Cells.Count > 4 Then Exit Sub
+    ' REGISTRAR (G4:H5)
+    If Not Application.Intersect(Target, Me.Range("G4:H5")) Is Nothing Then
+        Application.EnableEvents = False
+        Me.Range("C5").Select
+        Application.EnableEvents = True
+        Call modFornos.RegistrarForno
+        Exit Sub
+    End If
+    ' LIMPAR (J4:K5)
+    If Not Application.Intersect(Target, Me.Range("J4:K5")) Is Nothing Then
+        Application.EnableEvents = False
+        Me.Range("C5").Select
+        Application.EnableEvents = True
+        Call modFornos.LimparCampos
+        Exit Sub
+    End If
+End Sub

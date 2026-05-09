@@ -1,0 +1,11 @@
+Option Explicit
+
+Private Sub Worksheet_SelectionChange(ByVal Target As Range)
+    If Target.Cells.Count > 4 Then Exit Sub
+    If Not Application.Intersect(Target, Me.Range("J4:J5")) Is Nothing Then
+        Application.EnableEvents = False
+        Me.Range("B5").Select
+        Application.EnableEvents = True
+        Call modFornos.LimparFiltros
+    End If
+End Sub
