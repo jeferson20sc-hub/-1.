@@ -1,150 +1,104 @@
 #!/usr/bin/env python3
 """
-Curva ABC Reggae - Professional Dashboard
-Colors: Green #009B3A, Gold #FFD700, Red #CC0000, Black #000000
-Charts use static pre-computed data for reliable rendering.
+🇯🇲 CURVA ABC REGGAE — One Love, One Excel! 🇯🇲
+3 abas: INICIO  |  CURVA ABC  |  SCRIPTS
+Gráfico: bandas de fundo (A=verde, B=dourado, C=vermelho) + barras + curva Pareto
 """
 
-import openpyxl
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Border, Side, Alignment
-from openpyxl.utils import get_column_letter, column_index_from_string
-from openpyxl.chart import BarChart, LineChart, Reference, Series
+from openpyxl.utils import get_column_letter
+from openpyxl.chart import AreaChart, BarChart, LineChart, Reference, Series
 from openpyxl.formatting.rule import FormulaRule
+from openpyxl.worksheet.datavalidation import DataValidation
+from openpyxl.styles.protection import Protection
 
-# ===================== REGGAE COLORS =====================
+# ── Paleta Reggae ──────────────────────────────────────────────────────────────
+GREEN_DARK  = "006B28"
 GREEN       = "009B3A"
+GREEN_LIGHT = "C8F5DB"
+GREEN_CHART = "ADEBAD"   # zona A no gráfico
+GOLD_DARK   = "C8A400"
 GOLD        = "FFD700"
+GOLD_LIGHT  = "FFF5B0"
+GOLD_CHART  = "FFE87C"   # zona B no gráfico
+RED_DARK    = "990000"
 RED         = "CC0000"
+RED_LIGHT   = "FFD0D0"
+RED_CHART   = "FFAD99"   # zona C no gráfico (laranja-salmão como na imagem)
 BLACK       = "000000"
 WHITE       = "FFFFFF"
-GREEN_DARK  = "006B28"
-GREEN_LIGHT = "C8F5DB"
-GOLD_DARK   = "C8A400"
-GOLD_LIGHT  = "FFF5B0"
-RED_DARK    = "990000"
-RED_LIGHT   = "FFD0D0"
-GRAY_DARK   = "B0B0B0"
 DARK_BG     = "1A1A1A"
+BLUE_BAR    = "2E75B6"   # azul das barras (igual imagem de referência)
+GRAY_DARK   = "B0B0B0"
+GRAY_MID    = "E0E0E0"
 
-
-def fill(hex_color):
+# ── Helpers ────────────────────────────────────────────────────────────────────
+def F(hex_color):
     return PatternFill(fill_type="solid", fgColor=hex_color)
 
-def font(bold=False, color=WHITE, size=11, italic=False):
-    return Font(bold=bold, color=color, size=size, italic=italic, name="Calibri")
+def Ft(bold=False, color=WHITE, size=11, italic=False, name="Calibri"):
+    return Font(bold=bold, color=color, size=size, italic=italic, name=name)
 
-def border(style="thin", color=BLACK):
+def B(style="thin", color=BLACK):
     s = Side(style=style, color=color)
     return Border(left=s, right=s, top=s, bottom=s)
 
-def align(h="center", wrap=False):
+def A(h="center", wrap=False):
     return Alignment(horizontal=h, vertical="center", wrap_text=wrap)
 
+def mc(ws, r1, c1, r2, c2):
+    ws.merge_cells(start_row=r1, start_column=c1, end_row=r2, end_column=c2)
 
-def outer_border(ws, min_row, min_col, max_row, max_col, color=BLACK, style="medium"):
-    thick = Side(style=style, color=color)
-    thin  = Side(style="thin", color=color)
-    for row in ws.iter_rows(min_row=min_row, max_row=max_row,
-                             min_col=min_col, max_col=max_col):
-        for cell in row:
-            r, c = cell.row, cell.column
-            cell.border = Border(
-                top    = thick if r == min_row else thin,
-                bottom = thick if r == max_row else thin,
-                left   = thick if c == min_col else thin,
-                right  = thick if c == max_col else thin,
+def cell(ws, row, col, value="", fill_c=None, font=None, border=None, align=None, fmt=None):
+    c = ws.cell(row=row, column=col, value=value)
+    if fill_c:  c.fill      = F(fill_c)
+    if font:    c.font      = font
+    if border:  c.border    = border
+    if align:   c.alignment = align
+    if fmt:     c.number_format = fmt
+    return c
+
+def outer_border(ws, r1, c1, r2, c2, color=GREEN, thick="medium"):
+    t = Side(style=thick, color=color)
+    n = Side(style="thin", color=color)
+    for row in ws.iter_rows(r1, r2, c1, c2):
+        for c in row:
+            r, cc = c.row, c.column
+            c.border = Border(
+                top    = t if r  == r1 else n,
+                bottom = t if r  == r2 else n,
+                left   = t if cc == c1 else n,
+                right  = t if cc == c2 else n,
             )
 
-
-# ===================== SHEET ITEM DATA =====================
-SHEET_CONFIGS = [
-    {
-        "name": "Primeira",
-        "title": "CURVA ABC — PRIMEIRA",
-        "items": [
-            ("Servidor Backup",          3,   2, 25000),
-            ('Monitor 27" 4K',           5,  10,  3000),
-            ("Notebook Administrativo",  9,   6,  4500),
-            ("Nobreak Profissional",      1,   5,  2000),
-            ("Switch Gerenciavel",        7,   4,  1500),
-            ("Mouse sem fio",             4,  40,    50),
-            ("Patch Cord 1m",             8, 100,    15),
-            ("Teclado USB",               6,  80,    35),
-            ("Cabo Rede Cat6 (m)",        2, 200,     8),
-            ("Mousepad Slim",            10, 120,    12),
-        ],
-    },
-    {
-        "name": "01",
-        "title": "CURVA ABC — ABA 01",
-        "items": [
-            ("Notebook Executivo i7",      10,  35,  6500),
-            ("Servidor de Dados Pro",       2,  12, 15000),
-            ("Impressora Multifuncional",  17,  55,  1100),
-            ("Toner Impressora Laser",     12,  68,   680),
-            ("Memoria RAM 16GB",           19,  45,   380),
-            ('Monitor LED 24"',             4,  20,   850),
-            ("Webcam Full HD",             14,  82,   180),
-            ("Roteador Wi-Fi 6",           11,  15,   650),
-            ("SSD 480GB Sata",             15,  55,   190),
-            ("Nobreak 1500VA",              6,   8,  1200),
-            ("HD Externo 2TB",             20,  18,   420),
-            ("Teclado Mecanico RGB",        5,  30,   250),
-            ("Pen Drive 64GB",              9, 160,    45),
-            ("Headset com Microfone",      13,  64,   110),
-            ("Pacote de Papel A4",          7, 237,    28),
-            ("Filtro de Linha 5 Tom.",     18, 110,    40),
-            ("Cabo HDMI 2m",               1, 150,    25),
-            ("Adaptador USB-C",           16,  90,    35),
-            ("Mouse Optico Simples",        3, 120,    15),
-            ("Patch Cord RJ45 1m",          8, 200,    12),
-        ],
-    },
-    {
-        "name": "02",
-        "title": "CURVA ABC — ABA 02",
-        "items": [
-            ("Servidor Rack Dell Pro",     2,  15, 22500),
-            ("Workstation Grafica",       17,  19, 12000),
-            ("Notebook i7 32GB RAM",      10,  28,  7200),
-            ("Switch Gerenciavel 48p",     8,  10,  4800),
-            ("Placa de Video RTX",        22,   8,  5500),
-            ("Storage NAS 40TB",          21,   2, 18500),
-            ("Memoria RAM 16GB",          19,  45,   380),
-            ("Toner Impressora Laser",    12,  40,   320),
-            ('Monitor LED 24"',            4,  15,   850),
-            ("Roteador Wi-Fi 6",          11,  25,   450),
-            ("SSD 480GB Sata",            15,  55,   190),
-            ("Nobreak 1500VA",             6,   8,  1200),
-            ("HD Externo 2TB",            20,  18,   420),
-            ("Teclado Mecanico RGB",       5,  30,   250),
-            ("Pen Drive 64GB",             9, 150,    45),
-            ("Headset com Microfone",     13,  60,   110),
-            ("Pacote de Papel A4",         7, 200,    28),
-            ("Teclado de Entrada",        29, 100,    45),
-            ("Filtro de Linha",           18, 110,    40),
-            ("Webcam Full HD",            14,  22,   180),
-            ("Pilhas AA (Pacote)",        23, 300,    12),
-            ("Adaptador USB-C",           16,  90,    35),
-            ("Suporte para Monitor",      28,  20,   140),
-            ("Cabo HDMI 2m",               1,  85,    25),
-            ("Mousepad Simples",          24, 250,     8),
-            ("Mouse Optico Simples",       3, 120,    15),
-            ("Organizador de Cabos",      25, 180,    10),
-            ("Ar comprimido (Lata)",      27,  35,    45),
-            ("Pasta Termica",             26,  45,    35),
-            ("Conector RJ45 (Cento)",     30,  50,    30),
-        ],
-    },
+# ── Items ──────────────────────────────────────────────────────────────────────
+ITEMS = [
+    ("SKU001", "Servidor Rack Dell Pro",        15, 22500),
+    ("SKU002", "Storage NAS 40TB",               3, 18500),
+    ("SKU003", "Notebook i7 32GB RAM",           28,  7200),
+    ("SKU004", "Workstation Grafica RTX",         8,  9500),
+    ("SKU005", "Placa de Video RTX 4070",         6,  5500),
+    ("SKU006", "Switch Gerenciavel 48p",         10,  4800),
+    ("SKU007", "Impressora Multifuncional",       55,  1100),
+    ("SKU008", "Nobreak 1500VA",                  8,  1200),
+    ("SKU009", "Monitor LED 24\"",               20,    850),
+    ("SKU010", "Roteador Wi-Fi 6",               25,    650),
+    ("SKU011", "Toner Impressora Laser",          68,    680),
+    ("SKU012", "HD Externo 2TB",                 18,    420),
+    ("SKU013", "Memoria RAM 16GB",               45,    380),
+    ("SKU014", "Webcam Full HD",                  82,    180),
+    ("SKU015", "SSD 480GB Sata",                 55,    190),
+    ("SKU016", "Teclado Mecanico RGB",            30,    250),
+    ("SKU017", "Pen Drive 64GB",                 160,     45),
+    ("SKU018", "Headset com Microfone",            64,    110),
+    ("SKU019", "Mouse Optico Simples",            120,     15),
+    ("SKU020", "Patch Cord RJ45 1m",             200,     12),
 ]
 
-
-def classify_abc(items):
-    """Pre-compute ABC classification, sorted by VT descending."""
-    rows = []
-    for desc, cod, qty, cost in items:
-        rows.append({"desc": desc, "cod": cod, "qty": qty, "cost": cost, "vt": qty * cost})
+def classify(items, lim_a=0.80, lim_b=0.95):
+    rows = [{"sku": s, "desc": d, "qty": q, "cost": c, "vt": q*c}
+            for s, d, q, c in items]
     rows.sort(key=lambda x: x["vt"], reverse=True)
     total = sum(r["vt"] for r in rows)
     cumsum = 0
@@ -152,495 +106,733 @@ def classify_abc(items):
         cumsum += r["vt"]
         r["pct_ind"] = r["vt"] / total if total else 0
         r["pct_acc"] = cumsum / total if total else 0
-        r["abc"] = "A" if r["pct_acc"] <= 0.80 else ("B" if r["pct_acc"] <= 0.95 else "C")
+        r["abc"] = "A" if r["pct_acc"] <= lim_a else ("B" if r["pct_acc"] <= lim_b else "C")
     return rows, total
 
 
-def write_kpi_label(ws, row, col, label, label_color, bg=DARK_BG, span=2):
-    ws.merge_cells(start_row=row, start_column=col, end_row=row, end_column=col + span - 1)
-    c = ws.cell(row=row, column=col, value=label)
-    c.fill = fill(bg); c.font = font(bold=True, color=label_color, size=9)
-    c.alignment = align()
+# ═══════════════════════════════════════════════════════════════════════════════
+#  ABA 1 — 🇯🇲 INICIO
+# ═══════════════════════════════════════════════════════════════════════════════
+def create_inicio(wb):
+    ws = wb.create_sheet(title="\U0001f1ef\U0001f1f2 INICIO", index=0)
 
-def write_kpi_value(ws, row, col, value, bg, fmt=None, span=2):
-    ws.merge_cells(start_row=row, start_column=col, end_row=row, end_column=col + span - 1)
-    c = ws.cell(row=row, column=col, value=value)
-    c.fill = fill(bg); c.font = font(bold=True, color=WHITE, size=14)
-    c.alignment = align()
-    if fmt: c.number_format = fmt
+    for c, w in {"A":3,"B":22,"C":22,"D":22,"E":22,"F":3}.items():
+        ws.column_dimensions[c].width = w
+    for r in range(1, 55):
+        ws.row_dimensions[r].height = 20
+        for col in range(1, 7):
+            ws.cell(row=r, column=col).fill = F(DARK_BG)
+
+    # Faixa reggae topo
+    ws.row_dimensions[1].height = 8
+    for col, clr in [(2,GREEN),(3,GOLD),(4,RED),(5,BLACK)]:
+        ws.cell(row=1, column=col).fill = F(clr)
+
+    # Título principal
+    ws.row_dimensions[2].height = 80
+    mc(ws, 2, 2, 2, 5)
+    c = ws.cell(row=2, column=2, value="\U0001f1ef\U0001f1f2 CURVA ABC REGGAE")
+    c.fill = F(BLACK)
+    c.font = Font(bold=True, color=GREEN, size=32, name="Calibri")
+    c.alignment = A()
+
+    ws.row_dimensions[3].height = 28
+    mc(ws, 3, 2, 3, 5)
+    c = ws.cell(row=3, column=2, value="One Love, One Excel! ✌️  —  Dashboard Profissional de Curva ABC")
+    c.fill = F(BLACK)
+    c.font = Ft(italic=True, color=GOLD, size=14)
+    c.alignment = A()
+
+    # Faixas reggae fundo do título
+    ws.row_dimensions[4].height = 8
+    for col, clr in [(2,RED),(3,GOLD),(4,GREEN),(5,BLACK)]:
+        ws.cell(row=4, column=col).fill = F(clr)
+
+    # Tagline
+    ws.row_dimensions[5].height = 30
+    mc(ws, 5, 2, 5, 5)
+    c = ws.cell(row=5, column=2,
+                value="\U0001f981  Classifique seus produtos como um verdadeiro Rasta do Excel  \U0001f33f")
+    c.fill = F(BLACK)
+    c.font = Ft(italic=True, color=GOLD_LIGHT, size=11)
+    c.alignment = A()
+
+    # Emojis decorativos
+    ws.row_dimensions[6].height = 24
+    mc(ws, 6, 2, 6, 5)
+    c = ws.cell(row=6, column=2,
+                value="   \U0001f3b5  \U0001f3b8  \U0001f941  ☀️  \U0001f30a  ✈️  \U0001f33f  \U0001f981  ❤️  \U0001f3b5")
+    c.fill = F(GREEN_DARK)
+    c.font = Ft(size=14, color=WHITE)
+    c.alignment = A()
+
+    ws.row_dimensions[7].height = 8
+
+    # Cards de informação
+    def info_card(row, icon, title, lines, bg_color):
+        ws.row_dimensions[row].height = 26
+        mc(ws, row, 2, row, 5)
+        c = ws.cell(row=row, column=2, value=f"{icon}  {title}")
+        c.fill = F(bg_color)
+        c.font = Ft(bold=True, size=12)
+        c.alignment = A()
+        c.border = B(color=BLACK)
+        for j, line in enumerate(lines):
+            r = row + 1 + j
+            ws.row_dimensions[r].height = 20
+            mc(ws, r, 2, r, 5)
+            cx = ws.cell(row=r, column=2, value=line)
+            cx.fill = F(DARK_BG)
+            cx.font = Ft(color=WHITE, size=10)
+            cx.alignment = A(h="left")
+            cx.border = B(color=bg_color)
+        return row + len(lines) + 2
+
+    next_row = 8
+    next_row = info_card(next_row, "\U0001f7e2", "CLASSE A — Os Campeões de Valor",
+        ["  •  80% do valor total em poucos itens",
+         "  •  Gestão rigorosa, estoque de segurança alto",
+         "  •  Fórmula: % acumulado ≤ 80%"], GREEN_DARK)
+
+    next_row = info_card(next_row, "\U0001f7e1", "CLASSE B — Os Médios Necessários",
+        ["  •  Entre 80% e 95% do valor acumulado",
+         "  •  Gestão intermediária, revise trimestralmente",
+         "  •  Fórmula: % acumulado de 80% a 95%"], GOLD_DARK)
+
+    next_row = info_card(next_row, "\U0001f534", "CLASSE C — A Longa Cauda",
+        ["  •  Os últimos 5% do valor acumulado",
+         "  •  Muitos itens, pouco impacto financeiro",
+         "  •  Fórmula: % acumulado acima de 95%"], RED_DARK)
+
+    next_row = info_card(next_row, "⚙️", "Como Usar Este Dashboard",
+        ["  1️⃣  Vá para \U0001f4ca CURVA ABC e edite Qtd. e Custo Unit.",
+         "  2️⃣  O gráfico com as faixas coloridas atualiza automaticamente",
+         "  3️⃣  Para colorir via Excel Web: use o script na aba ⚙️ SCRIPTS",
+         "  4️⃣  Proteção ativa — senha: abc2026."], "3A3A3A")
+
+    ws.row_dimensions[next_row].height = 8
+    next_row += 1
+
+    # Footer
+    ws.row_dimensions[next_row].height = 22
+    mc(ws, next_row, 2, next_row, 5)
+    c = ws.cell(row=next_row, column=2,
+                value="\U0001f1ef\U0001f1f2  Jah bless your spreadsheet!  |  One Love, One Excel!  |  2026  \U0001f33f")
+    c.fill = F(BLACK)
+    c.font = Ft(bold=True, color=GREEN, size=10)
+    c.alignment = A()
+
+    ws.sheet_properties.tabColor = GREEN_DARK
+    return ws
 
 
-# ===================== DATA SHEET =====================
-def create_sheet(wb, cfg):
-    ws = wb.create_sheet(title=cfg["name"])
-    items = cfg["items"]
-    DS = 10   # data_start row
-    n  = len(items)
-    DE = DS + n - 1   # data_end row
+# ═══════════════════════════════════════════════════════════════════════════════
+#  ABA 2 — 📊 CURVA ABC
+# ═══════════════════════════════════════════════════════════════════════════════
+def create_abc_sheet(wb):
+    ws = wb.create_sheet(title="\U0001f4ca CURVA ABC")
 
-    sorted_data, total_vt = classify_abc(items)
+    DS = 10   # data start row
+    sorted_data, total_vt = classify(ITEMS)
+    n  = len(sorted_data)
+    DE = DS + n - 1
 
-    # Build lookup: original desc -> abc class (for row coloring)
-    abc_lookup = {(d["desc"], d["cod"]): d["abc"] for d in sorted_data}
-
-    # ---- Column widths ----
+    # ── Larguras ──
     col_w = {
-        "A": 7,  "B": 32, "C": 10, "D": 10, "E": 14,
-        "F": 16, "G": 13, "H": 13,
-        # spacer
-        "I": 2,
-        # summary panel
-        "J": 10, "K": 16, "L": 10, "M": 10, "N": 22,
-        # hidden chart cols
-        "P": 30, "Q": 14, "R": 14, "S": 14,
+        "A":  7,  "B": 10,  "C": 30,  "D": 10,
+        "E": 14,  "F": 16,  "G": 12,  "H": 12,
+        "I":  2,  "J": 11,  "K": 16,  "L": 10,
+        "M": 10,  "N":  2,
+        # Células de limite (editáveis)
+        "O": 12,  "P": 12,
+        # Dados do gráfico (ocultos)
+        "Q":  2,  "R": 28,  "S": 14,  "T": 14,
+        "U": 10,  "V": 10,  "W": 10,
     }
     for c, w in col_w.items():
         ws.column_dimensions[c].width = w
 
-    # ---- Row heights ----
-    ws.row_dimensions[1].height = 48
-    for r in range(2, 6):
-        ws.row_dimensions[r].height = 26
-    ws.row_dimensions[6].height = 16
-    ws.row_dimensions[7].height = 20
-    ws.row_dimensions[8].height = 24
-    ws.row_dimensions[9].height = 6
-    for r in range(DS, DE + 2):
-        ws.row_dimensions[r].height = 19
+    # ── Alturas ──
+    ws.row_dimensions[1].height = 52
+    for r in range(2, 8):
+        ws.row_dimensions[r].height = 24
+    ws.row_dimensions[8].height = 10
+    ws.row_dimensions[9].height = 26
+    for r in range(DS, DE + 3):
+        ws.row_dimensions[r].height = 18
 
-    # ---- Row 1: Title bar ----
-    ws.merge_cells("A1:H1")
-    t = ws["A1"]
-    t.value = cfg["title"]
-    t.fill = fill(BLACK); t.font = font(bold=True, color=GREEN, size=22)
-    t.alignment = align()
+    # ── Linha 1: Título ──
+    mc(ws, 1, 1, 1, 8)
+    t = ws.cell(row=1, column=1,
+                value="\U0001f1ef\U0001f1f2  CURVA ABC REGGAE  —  One Love, One Excel! ✌️")
+    t.fill = F(BLACK)
+    t.font = Font(bold=True, color=GREEN, size=22, name="Calibri")
+    t.alignment = A()
 
-    ws.merge_cells("J1:N1")
-    leg = ws["J1"]
-    leg.value = "A = ate 80%   |   B = 80–95%   |   C = 95–100%"
-    leg.fill = fill(BLACK); leg.font = font(color=GOLD, size=10)
-    leg.alignment = align()
+    mc(ws, 1, 10, 1, 13)
+    leg = ws.cell(row=1, column=10,
+                  value="\U0001f7e2 A=até 80%  |\U0001f7e1 B=80-95%  |\U0001f534 C=95-100%")
+    leg.fill = F(BLACK)
+    leg.font = Ft(color=GOLD, size=10)
+    leg.alignment = A()
+    for c in range(9, 14):
+        ws.cell(row=1, column=c).fill = F([GREEN,GOLD,RED,GREEN,BLACK][(c-9)%5])
 
-    # Reggae stripe (I1)
-    for col_letter, c in [("I", BLACK)]:
-        ws[f"{col_letter}1"].fill = fill(c)
-
-    # ---- Rows 2–5: KPI panel ----
-    for r in range(2, 6):
+    # ── KPI ──────────────────────────────────────────────────────────────────
+    for r in range(2, 8):
         for c in range(1, 9):
-            ws.cell(row=r, column=c).fill = fill(DARK_BG)
+            ws.cell(row=r, column=c).fill = F(DARK_BG)
 
-    # Row 2–3 KPIs
-    write_kpi_label(ws, 2, 1, "V.T. TOTAL",   GREEN)
-    write_kpi_value(ws, 3, 1, f"=SUM($F${DS}:$F${DE})", GREEN_DARK, fmt='R$ #,##0.00')
+    def kpi(lrow, vrow, col, label, formula, bg, lfg=WHITE, span=2, fmt=None):
+        mc(ws, lrow, col, lrow, col+span-1)
+        lc = ws.cell(row=lrow, column=col, value=label)
+        lc.fill = F(DARK_BG); lc.font = Ft(bold=True, color=lfg, size=9)
+        lc.alignment = A()
+        mc(ws, vrow, col, vrow, col+span-1)
+        vc = ws.cell(row=vrow, column=col, value=formula)
+        vc.fill = F(bg); vc.font = Ft(bold=True, size=14)
+        vc.alignment = A()
+        if fmt: vc.number_format = fmt
 
-    write_kpi_label(ws, 2, 3, "V.T. CLASSE A", GREEN)
-    write_kpi_value(ws, 3, 3, f'=SUMIF($A${DS}:$A${DE},"A",$F${DS}:$F${DE})', GREEN, fmt='R$ #,##0.00')
+    kpi(2,3, 1,"V.T. TOTAL",    f"=SUM($F${DS}:$F${DE})",      GREEN_DARK, GREEN, fmt='R$ #,##0.00')
+    kpi(2,3, 3,"\U0001f7e2 V.T. CLASSE A",
+              f'=SUMIF($A${DS}:$A${DE},"A",$F${DS}:$F${DE})',   GREEN,      WHITE, fmt='R$ #,##0.00')
+    kpi(2,3, 5,"% ITENS CLASSE A",
+              f'=IFERROR(COUNTIF($A${DS}:$A${DE},"A")/COUNTA($B${DS}:$B${DE}),0)',
+              GOLD_DARK, GOLD, fmt='0.0%')
+    kpi(2,3, 7,"\U0001f534 MAIOR V.T.", f"=MAX($F${DS}:$F${DE})", RED_DARK, RED_LIGHT, fmt='R$ #,##0.00')
 
-    write_kpi_label(ws, 2, 5, "% ITENS A",  GOLD)
-    write_kpi_value(ws, 3, 5,
-        f'=IFERROR(COUNTIF($A${DS}:$A${DE},"A")/COUNTA($B${DS}:$B${DE}),0)',
-        GOLD_DARK, fmt='0.0%')
+    kpi(4,5, 1,"MENOR V.T.",    f"=MIN($F${DS}:$F${DE})",       GREEN_DARK, GREEN,     fmt='R$ #,##0.00')
+    kpi(4,5, 3,"\U0001f7e1 V.T. CLASSE B",
+              f'=SUMIF($A${DS}:$A${DE},"B",$F${DS}:$F${DE})',   GOLD_DARK,  BLACK,     fmt='R$ #,##0.00')
+    kpi(4,5, 5,"STATUS",
+              f'=IF(IFERROR(MAX($H${DS}:$H${DE}),0)>1.0001,"⚠️ VERIFICAR","✅ OK")',
+              GREEN, WHITE)
+    kpi(4,5, 7,"ITENS TOTAIS",  f"=COUNTA($B${DS}:$B${DE})",    "3A3A3A",   WHITE)
 
-    write_kpi_label(ws, 2, 7, "MAIOR V.T.", RED_LIGHT)
-    write_kpi_value(ws, 3, 7, f'=MAX($F${DS}:$F${DE})', RED_DARK, fmt='R$ #,##0.00')
+    # Linha 6: controles de limite
+    mc(ws, 6, 1, 7, 2)
+    ctrl_lbl = ws.cell(row=6, column=1, value="⚙️  LIMITES\nA / B")
+    ctrl_lbl.fill = F(DARK_BG); ctrl_lbl.font = Ft(bold=True, color=GOLD, size=9)
+    ctrl_lbl.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
 
-    # Row 4–5 KPIs
-    write_kpi_label(ws, 4, 1, "MENOR V.T.", GREEN)
-    write_kpi_value(ws, 5, 1, f'=MIN($F${DS}:$F${DE})', GREEN_DARK, fmt='R$ #,##0.00')
+    # Limite A (editável)
+    la_lbl = ws.cell(row=6, column=3, value="Limite A (ex: 80%):")
+    la_lbl.fill = F(GREEN_DARK); la_lbl.font = Ft(bold=True, size=9); la_lbl.alignment = A(h="left")
+    mc(ws, 6, 3, 6, 4)
 
-    write_kpi_label(ws, 4, 3, "STATUS", GREEN)
-    write_kpi_value(ws, 5, 3,
-        f'=IF(IFERROR(MAX($H${DS}:$H${DE}),0)>1.0001,"VERIFICAR","OK")',
-        GREEN)
+    la_val = ws.cell(row=6, column=5, value=0.80)
+    la_val.fill = F(GREEN); la_val.font = Ft(bold=True, color=WHITE, size=14)
+    la_val.alignment = A(); la_val.number_format = '0%'
+    la_val.protection = Protection(locked=False)  # editável
 
-    write_kpi_label(ws, 4, 5, "LIMITE A", GOLD)
-    write_kpi_value(ws, 5, 5, 0.80, GOLD_DARK, fmt='0%')
+    # Limite B (editável)
+    lb_lbl = ws.cell(row=7, column=3, value="Limite B (ex: 95%):")
+    lb_lbl.fill = F(GOLD_DARK); lb_lbl.font = Ft(bold=True, color=BLACK, size=9); lb_lbl.alignment = A(h="left")
+    mc(ws, 7, 3, 7, 4)
 
-    write_kpi_label(ws, 4, 7, "LIMITE B", RED_LIGHT)
-    write_kpi_value(ws, 5, 7, 0.95, RED_DARK, fmt='0%')
+    lb_val = ws.cell(row=7, column=5, value=0.95)
+    lb_val.fill = F(GOLD); lb_val.font = Ft(bold=True, color=BLACK, size=14)
+    lb_val.alignment = A(); lb_val.number_format = '0%'
+    lb_val.protection = Protection(locked=False)  # editável
 
-    outer_border(ws, 2, 1, 5, 8, color=GREEN, style="medium")
+    # Data validation nos limites
+    dv_a = DataValidation(type="decimal", operator="between", formula1="0.5", formula2="0.89",
+                          error="Limite A deve ser entre 50% e 89%",
+                          errorTitle="❌ Valor Inválido", showErrorMessage=True)
+    dv_b = DataValidation(type="decimal", operator="between", formula1="0.5", formula2="0.99",
+                          error="Limite B deve ser entre 50% e 99%",
+                          errorTitle="❌ Valor Inválido", showErrorMessage=True)
+    ws.add_data_validation(dv_a); dv_a.add(ws["E6"])
+    ws.add_data_validation(dv_b); dv_b.add(ws["E7"])
 
-    # ---- Row 6: subtitle ----
-    ws.merge_cells("A6:H6")
-    s = ws["A6"]
-    s.value = "  Edite somente Quant. e Custo Unit. — ABC, V.T. e % recalculam automaticamente."
-    s.fill = fill(GREEN_DARK); s.font = font(italic=True, color=GOLD_LIGHT, size=8)
-    s.alignment = align(h="left")
+    outer_border(ws, 2, 1, 7, 8)
 
-    # ---- Row 7: right-side summary header ----
-    for c, label in [(10,"Classe"),(11,"Total V.T."),(12,"% Total"),(13,"Qtd. Itens"),(14,"Barra")]:
-        cell = ws.cell(row=7, column=c, value=label)
-        cell.fill = fill(BLACK); cell.font = font(bold=True, size=9)
-        cell.alignment = align(); cell.border = border(color=GRAY_DARK)
+    # ── Painel de resumo (cols J-M) ──
+    mc(ws, 2, 10, 2, 13)
+    sh = ws.cell(row=2, column=10, value="RESUMO POR CLASSE")
+    sh.fill = F(BLACK); sh.font = Ft(bold=True, color=GOLD, size=10); sh.alignment = A()
+    for c, label in [(10,"Classe"),(11,"Total V.T."),(12,"% Total"),(13,"Qtd.")]:
+        cx = ws.cell(row=3, column=c, value=label)
+        cx.fill = F("2A2A2A"); cx.font = Ft(bold=True, size=9); cx.alignment = A()
+        cx.border = B(color=GRAY_DARK)
 
-    # ---- Rows 8–10: class summary ----
-    for cls, bg, r in [("A", GREEN, 8), ("B", GOLD_DARK, 9), ("C", RED_DARK, 10)]:
+    for cls, bg, r in [("A",GREEN,4),("B",GOLD_DARK,5),("C",RED_DARK,6)]:
         fg = BLACK if cls == "B" else WHITE
-        cells_data = [
-            (10, cls),
-            (11, f'=SUMIF($A${DS}:$A${DE},"{cls}",$F${DS}:$F${DE})'),
-            (12, f'=IFERROR(K{r}/SUM($F${DS}:$F${DE}),0)'),
-            (13, f'=COUNTIF($A${DS}:$A${DE},"{cls}")'),
-            (14, f'=REPT(CHAR(9608),ROUND(L{r}*20,0))'),
-        ]
-        fmts = [None, 'R$ #,##0', '0.0%', None, None]
-        for (col, val), fmt in zip(cells_data, fmts):
-            c = ws.cell(row=r, column=col, value=val)
-            c.fill = fill(bg); c.font = font(bold=True, color=fg, size=11 if col != 14 else 8)
-            c.alignment = align(h="left" if col == 14 else "center")
-            c.border = border(color=BLACK)
-            if fmt: c.number_format = fmt
+        for col, val, fmt in [
+            (10, cls,  None),
+            (11, f'=SUMIF($A${DS}:$A${DE},"{cls}",$F${DS}:$F${DE})', 'R$ #,##0'),
+            (12, f'=IFERROR(K{r}/SUM($F${DS}:$F${DE}),0)', '0.0%'),
+            (13, f'=COUNTIF($A${DS}:$A${DE},"{cls}")', None),
+        ]:
+            cx = ws.cell(row=r, column=col, value=val)
+            cx.fill = F(bg); cx.font = Ft(bold=True, color=fg, size=11 if col==10 else 10)
+            cx.alignment = A(); cx.border = B(color=BLACK)
+            if fmt: cx.number_format = fmt
+        ws.row_dimensions[r].height = 22
 
-    # ---- Row 8: column headers ----
-    ws.row_dimensions[8].height = 26
+    mc(ws, 7, 10, 7, 13)
+    ok = ws.cell(row=7, column=10,
+                 value=f'=IF(IFERROR(MAX($H${DS}:$H${DE}),0)>1.0001,"⚠️ VERIFICAR","✅ Tudo consistente")')
+    ok.fill = F(DARK_BG); ok.font = Ft(color=GREEN, size=9); ok.alignment = A()
+
+    # ── Instrução ──
+    mc(ws, 8, 1, 8, 13)
+    ins = ws.cell(row=8, column=1,
+                  value="  \U0001f33f  Edite somente Qtd. (col D) e Custo Unit. (col E)  "
+                        "| Limites A/B nas células E6 e E7  "
+                        "| Gráfico atualiza automaticamente  \U0001f3b5")
+    ins.fill = F(GREEN_DARK); ins.font = Ft(italic=True, color="C8F5DB", size=8)
+    ins.alignment = A(h="left")
+    ws.row_dimensions[8].height = 14
+
+    # ── Cabeçalho de dados (row 9) ──
     headers = [
-        (1, "ABC",             BLACK, GREEN),
-        (2, "Descricao",       BLACK, WHITE),
-        (3, "Cod.",            BLACK, WHITE),
-        (4, "Quant.",          BLACK, GOLD),
-        (5, "Custo Unit.(R$)", BLACK, GOLD),
-        (6, "V.T. (R$)",       BLACK, GREEN),
-        (7, "% Individual",    BLACK, WHITE),
-        (8, "% Acumulado",     BLACK, WHITE),
+        (1,"ABC",BLACK,GREEN),(2,"SKU",BLACK,WHITE),(3,"Descrição",BLACK,WHITE),
+        (4,"Qtd.",BLACK,GOLD),(5,"Custo Unit.(R$)",BLACK,GOLD),
+        (6,"V.T. (R$)",BLACK,GREEN),(7,"% Individual",BLACK,WHITE),(8,"% Acumulado",BLACK,WHITE),
     ]
     for col, label, bg, fg in headers:
-        c = ws.cell(row=8, column=col, value=label)
-        c.fill = fill(bg); c.font = font(bold=True, color=fg, size=10)
-        c.alignment = align(); c.border = border(color=GREEN_DARK)
+        cx = ws.cell(row=9, column=col, value=label)
+        cx.fill = F(bg); cx.font = Ft(bold=True, color=fg, size=10)
+        cx.alignment = A(); cx.border = B(color=GREEN_DARK)
 
-    # Hidden chart-data header row
-    for col, label in [(16,"Label"),(17,"VT Ord."),(18,"% Acum."),(19,"VT A"),(20,"VT B"),(21,"VT C")]:
-        c = ws.cell(row=8, column=col, value=label)
-        c.fill = fill(DARK_BG); c.font = font(bold=True, color=GRAY_DARK, size=8)
-        c.alignment = align()
+    # Cabeçalhos auxiliares do gráfico (cols R-W, row 9)
+    for col, label in [(18,"Label"),(19,"% Ind."),(20,"% Acum."),(21,"Zona A"),(22,"Zona B"),(23,"Zona C")]:
+        cx = ws.cell(row=9, column=col, value=label)
+        cx.fill = F(DARK_BG); cx.font = Ft(bold=True, color=GRAY_DARK, size=8); cx.alignment = A()
 
-    # ---- Data rows (formulas for main table, STATIC values for chart cols) ----
-    from openpyxl.styles.protection import Protection
     unlock = Protection(locked=False)
+    abc_lookup = {(d["sku"], d["desc"]): d["abc"] for d in sorted_data}
 
-    for i, (desc, cod, qty, cost) in enumerate(items):
+    # ── Linhas de dados ──
+    for i, (sku, desc, qty, cost) in enumerate(ITEMS):
         row = DS + i
-        item_abc = abc_lookup.get((desc, cod), "C")
+        abc_class = abc_lookup.get((sku, desc), "C")
 
-        if item_abc == "A":
-            rf = fill(GREEN_LIGHT); abc_bg = GREEN
-        elif item_abc == "B":
-            rf = fill(GOLD_LIGHT);  abc_bg = GOLD_DARK
+        if abc_class == "A":
+            rf = GREEN_LIGHT; abc_bg = GREEN
+        elif abc_class == "B":
+            rf = GOLD_LIGHT;  abc_bg = GOLD_DARK
         else:
-            rf = fill(RED_LIGHT);   abc_bg = RED_DARK
+            rf = RED_LIGHT;   abc_bg = RED_DARK
 
-        # Col A: ABC formula (recalculates)
-        c = ws.cell(row=row, column=1,
-            value=f'=IF($H{row}<=$E$5,"A",IF($H{row}<=$G$5,"B","C"))')
-        c.fill = fill(abc_bg); c.font = font(bold=True, size=11)
-        c.alignment = align(); c.border = border(color=BLACK)
+        fg_abc = BLACK if abc_class == "B" else WHITE
 
-        # Col B: Description
-        c = ws.cell(row=row, column=2, value=desc)
-        c.fill = rf; c.font = font(color=BLACK, size=10)
-        c.alignment = align(h="left"); c.border = border(color=GRAY_DARK)
+        # Col A: fórmula ABC (referencia E6 e E7 como limites dinâmicos)
+        cx = ws.cell(row=row, column=1,
+                     value=f'=IF($H{row}<=$E$6,"A",IF($H{row}<=$E$7,"B","C"))')
+        cx.fill = F(abc_bg); cx.font = Ft(bold=True, color=fg_abc, size=11)
+        cx.alignment = A(); cx.border = B(color=BLACK)
 
-        # Col C: Code
-        c = ws.cell(row=row, column=3, value=cod)
-        c.fill = rf; c.font = font(color=BLACK, size=10)
-        c.alignment = align(); c.border = border(color=GRAY_DARK)
+        # Col B: SKU
+        cx = ws.cell(row=row, column=2, value=sku)
+        cx.fill = F(rf); cx.font = Ft(color=BLACK, size=10); cx.alignment = A(); cx.border = B(color=GRAY_DARK)
 
-        # Col D: Quantity (editable)
-        c = ws.cell(row=row, column=4, value=qty)
-        c.fill = fill(WHITE); c.font = font(bold=True, color=BLACK, size=10)
-        c.alignment = align()
-        c.border = Border(
-            left=Side(style="medium", color=GREEN_DARK),
-            right=Side(style="medium", color=GREEN_DARK),
-            top=Side(style="thin", color=GRAY_DARK),
-            bottom=Side(style="thin", color=GRAY_DARK))
-        c.number_format = '#,##0'
-        c.protection = unlock
+        # Col C: Descrição
+        cx = ws.cell(row=row, column=3, value=desc)
+        cx.fill = F(rf); cx.font = Ft(color=BLACK, size=10); cx.alignment = A(h="left"); cx.border = B(color=GRAY_DARK)
 
-        # Col E: Unit cost (editable)
-        c = ws.cell(row=row, column=5, value=cost)
-        c.fill = fill(WHITE); c.font = font(bold=True, color=BLACK, size=10)
-        c.alignment = align(h="right")
-        c.border = Border(
-            left=Side(style="medium", color=GREEN_DARK),
-            right=Side(style="medium", color=GREEN_DARK),
-            top=Side(style="thin", color=GRAY_DARK),
-            bottom=Side(style="thin", color=GRAY_DARK))
-        c.number_format = 'R$ #,##0.00'
-        c.protection = unlock
+        # Col D: Qtd (editável)
+        cx = ws.cell(row=row, column=4, value=qty)
+        cx.fill = F(WHITE); cx.font = Ft(bold=True, color=BLACK, size=10)
+        cx.alignment = A(); cx.number_format = '#,##0'; cx.protection = unlock
+        cx.border = Border(
+            left=Side(style="medium", color=GREEN_DARK), right=Side(style="medium", color=GREEN_DARK),
+            top=Side(style="thin", color=GRAY_MID),     bottom=Side(style="thin", color=GRAY_MID))
 
-        # Col F: VT formula
-        c = ws.cell(row=row, column=6, value=f'=IFERROR(D{row}*E{row},0)')
-        c.fill = rf; c.font = font(bold=True, color=BLACK, size=10)
-        c.alignment = align(h="right"); c.border = border(color=GRAY_DARK)
-        c.number_format = 'R$ #,##0.00'
+        # Col E: Custo Unit (editável)
+        cx = ws.cell(row=row, column=5, value=cost)
+        cx.fill = F(WHITE); cx.font = Ft(bold=True, color=BLACK, size=10)
+        cx.alignment = A(h="right"); cx.number_format = 'R$ #,##0.00'; cx.protection = unlock
+        cx.border = Border(
+            left=Side(style="medium", color=GREEN_DARK), right=Side(style="medium", color=GREEN_DARK),
+            top=Side(style="thin", color=GRAY_MID),     bottom=Side(style="thin", color=GRAY_MID))
+
+        # Col F: VT
+        cx = ws.cell(row=row, column=6, value=f'=IFERROR(D{row}*E{row},0)')
+        cx.fill = F(rf); cx.font = Ft(bold=True, color=BLACK, size=10)
+        cx.alignment = A(h="right"); cx.border = B(color=GRAY_DARK); cx.number_format = 'R$ #,##0.00'
 
         # Col G: % Individual
-        c = ws.cell(row=row, column=7,
-            value=f'=IFERROR(F{row}/SUM($F${DS}:$F${DE}),0)')
-        c.fill = rf; c.font = font(color=BLACK, size=10)
-        c.alignment = align(); c.border = border(color=GRAY_DARK)
-        c.number_format = '0.00%'
+        cx = ws.cell(row=row, column=7,
+                     value=f'=IFERROR(F{row}/SUM($F${DS}:$F${DE}),0)')
+        cx.fill = F(rf); cx.font = Ft(color=BLACK, size=10)
+        cx.alignment = A(); cx.border = B(color=GRAY_DARK); cx.number_format = '0.00%'
 
-        # Col H: % Accumulated (SUMIF approach - proper Pareto)
-        c = ws.cell(row=row, column=8,
-            value=f'=IFERROR(SUMIF($F${DS}:$F${DE},">="&F{row},$F${DS}:$F${DE})/SUM($F${DS}:$F${DE}),0)')
-        c.fill = rf; c.font = font(color=BLACK, size=10)
-        c.alignment = align(); c.border = border(color=GRAY_DARK)
-        c.number_format = '0.00%'
+        # Col H: % Acumulado
+        cx = ws.cell(row=row, column=8,
+                     value=f'=IFERROR(SUMIF($F${DS}:$F${DE},">="&F{row},$F${DS}:$F${DE})/SUM($F${DS}:$F${DE}),0)')
+        cx.fill = F(rf); cx.font = Ft(color=BLACK, size=10)
+        cx.alignment = A(); cx.border = B(color=GRAY_DARK); cx.number_format = '0.00%'
 
-    # ---- STATIC chart data (pre-computed Python values) ----
-    # Col P(16): labels, Q(17): VT sorted, R(18): % acc, S(19): VT_A, T(20): VT_B, U(21): VT_C
+        # ── Dados estáticos para o gráfico (pré-calculados em Python) ──
+        d = sorted_data[i]  # sorted_data está na mesma ordem que ITEMS após sort? NÃO.
+        # Preciso encontrar o item correto em sorted_data
+
+    # Rewrite chart data correctly — use sorted_data order
     for i, d in enumerate(sorted_data):
         row = DS + i
-        label = f"{d['desc'][:20]} ({d['abc']})"
+        lbl = f"{d['sku']} ({d['abc']})"
 
-        c = ws.cell(row=row, column=16, value=label)
-        c.fill = fill(DARK_BG); c.font = font(color=GRAY_DARK, size=8)
-        c.alignment = align(h="left")
+        # Col R(18): label
+        cx = ws.cell(row=row, column=18, value=lbl)
+        cx.fill = F(DARK_BG); cx.font = Ft(color=GRAY_DARK, size=8); cx.alignment = A(h="left")
 
-        c = ws.cell(row=row, column=17, value=d["vt"])
-        c.fill = fill(DARK_BG); c.font = font(color=GRAY_DARK, size=8)
-        c.number_format = '#,##0'
+        # Col S(19): % individual
+        cx = ws.cell(row=row, column=19, value=round(d["pct_ind"], 4))
+        cx.fill = F(DARK_BG); cx.font = Ft(color=GRAY_DARK, size=8)
+        cx.number_format = '0.00%'
 
-        c = ws.cell(row=row, column=18, value=round(d["pct_acc"], 4))
-        c.fill = fill(DARK_BG); c.font = font(color=GRAY_DARK, size=8)
-        c.number_format = '0.0%'
+        # Col T(20): % acumulado
+        cx = ws.cell(row=row, column=20, value=round(d["pct_acc"], 4))
+        cx.fill = F(DARK_BG); cx.font = Ft(color=GRAY_DARK, size=8)
+        cx.number_format = '0.00%'
 
-        # Separate VT by class (0 for non-matching, not NA)
-        c = ws.cell(row=row, column=19, value=d["vt"] if d["abc"] == "A" else 0)
-        c.fill = fill(GREEN_DARK); c.font = font(color=GRAY_DARK, size=8)
-        c.number_format = '#,##0'
+        # Cols U/V/W (21/22/23): zona A / zona B / zona C
+        # Cada item tem exatamente 1.0 em sua zona e 0.0 nas demais
+        cx = ws.cell(row=row, column=21, value=1.0 if d["abc"] == "A" else 0.0)
+        cx.fill = F(GREEN_DARK); cx.font = Ft(color=GRAY_DARK, size=8)
 
-        c = ws.cell(row=row, column=20, value=d["vt"] if d["abc"] == "B" else 0)
-        c.fill = fill(GOLD_DARK); c.font = font(color=GRAY_DARK, size=8)
-        c.number_format = '#,##0'
+        cx = ws.cell(row=row, column=22, value=1.0 if d["abc"] == "B" else 0.0)
+        cx.fill = F(GOLD_DARK); cx.font = Ft(color=GRAY_DARK, size=8)
 
-        c = ws.cell(row=row, column=21, value=d["vt"] if d["abc"] == "C" else 0)
-        c.fill = fill(RED_DARK); c.font = font(color=GRAY_DARK, size=8)
-        c.number_format = '#,##0'
+        cx = ws.cell(row=row, column=23, value=1.0 if d["abc"] == "C" else 0.0)
+        cx.fill = F(RED_DARK); cx.font = Ft(color=GRAY_DARK, size=8)
 
-    # ---- Total row ----
+    # ── Linha de total ──
     tr = DE + 1
     ws.row_dimensions[tr].height = 22
-    ws.merge_cells(start_row=tr, start_column=1, end_row=tr, end_column=3)
-    c = ws.cell(row=tr, column=1, value="TOTAL GERAL")
-    c.fill = fill(BLACK); c.font = font(bold=True, color=GOLD, size=11)
-    c.alignment = align()
+    mc(ws, tr, 1, tr, 3)
+    cx = ws.cell(row=tr, column=1, value="TOTAL GERAL")
+    cx.fill = F(BLACK); cx.font = Ft(bold=True, color=GOLD, size=11); cx.alignment = A()
 
-    c = ws.cell(row=tr, column=4, value=f'=SUM(D{DS}:D{DE})')
-    c.fill = fill(BLACK); c.font = font(bold=True, size=11)
-    c.alignment = align(); c.number_format = '#,##0'
-
-    ws.cell(row=tr, column=5).fill = fill(BLACK)
-
-    c = ws.cell(row=tr, column=6, value=f'=SUM(F{DS}:F{DE})')
-    c.fill = fill(GREEN); c.font = font(bold=True, size=11)
-    c.alignment = align(h="right"); c.number_format = 'R$ #,##0.00'
-
+    cx = ws.cell(row=tr, column=4, value=f'=SUM(D{DS}:D{DE})')
+    cx.fill = F(BLACK); cx.font = Ft(bold=True, size=11); cx.alignment = A(); cx.number_format = '#,##0'
+    ws.cell(row=tr, column=5).fill = F(BLACK)
+    cx = ws.cell(row=tr, column=6, value=f'=SUM(F{DS}:F{DE})')
+    cx.fill = F(GREEN); cx.font = Ft(bold=True, size=11); cx.alignment = A(h="right")
+    cx.number_format = 'R$ #,##0.00'
     for col in [7, 8]:
-        c = ws.cell(row=tr, column=col, value=1.0)
-        c.fill = fill(BLACK); c.font = font(bold=True, size=11)
-        c.alignment = align(); c.number_format = '0%'
-
+        cx = ws.cell(row=tr, column=col, value=1.0)
+        cx.fill = F(BLACK); cx.font = Ft(bold=True, size=11); cx.alignment = A(); cx.number_format = '0%'
     for col in range(1, 9):
-        c = ws.cell(row=tr, column=col)
-        c.border = Border(
-            top=Side(style="medium", color=GREEN),
-            bottom=Side(style="medium", color=GREEN),
-            left=Side(style="thin", color=GREEN),
-            right=Side(style="thin", color=GREEN))
+        ws.cell(row=tr, column=col).border = Border(
+            top=Side(style="medium",color=GREEN), bottom=Side(style="medium",color=GREEN),
+            left=Side(style="thin",color=GREEN),  right=Side(style="thin",color=GREEN))
 
-    # ---- Charts (using STATIC pre-computed columns P–U) ----
+    # ── GRÁFICO — Curva ABC com faixas coloridas ────────────────────────────
+    # AreaChart (stacked) para as bandas de fundo: verde(A) | dourado(B) | vermelho(C)
+    # + BarChart para % individual (barras azuis)
+    # + LineChart para % acumulado (linha vermelha)
+
     chart_row = tr + 3
 
-    # Chart 1: Bar chart — VT por classe (A=green, B=gold, C=red)
+    # ─ AreaChart: bandas de fundo ─
+    area = AreaChart()
+    area.grouping = "stacked"
+    area.title    = "\U0001f1ef\U0001f1f2 CURVA ABC REGGAE — One Love, One Excel!"
+    area.y_axis.title = "% do Total"
+    area.x_axis.title = "Itens (ordenados por V.T. decrescente)"
+    area.style    = 10
+    area.width    = 30
+    area.height   = 16
+
+    # Série Zona A — verde
+    ser_za = Series(Reference(ws, min_col=21, min_row=DS, max_row=DE), title="Zona A \U0001f7e2")
+    ser_za.graphicalProperties.solidFill = GREEN_CHART
+    area.series.append(ser_za)
+
+    # Série Zona B — dourado
+    ser_zb = Series(Reference(ws, min_col=22, min_row=DS, max_row=DE), title="Zona B \U0001f7e1")
+    ser_zb.graphicalProperties.solidFill = GOLD_CHART
+    area.series.append(ser_zb)
+
+    # Série Zona C — vermelho/laranja (como na imagem de referência)
+    ser_zc = Series(Reference(ws, min_col=23, min_row=DS, max_row=DE), title="Zona C \U0001f534")
+    ser_zc.graphicalProperties.solidFill = RED_CHART
+    area.series.append(ser_zc)
+
+    area.set_categories(Reference(ws, min_col=18, min_row=DS, max_row=DE))
+    area.y_axis.scaling.min = 0
+    area.y_axis.scaling.max = 1
+    area.y_axis.numFmt = '0%'
+
+    # ─ BarChart: % individual ─
     bar = BarChart()
-    bar.type      = "col"
-    bar.grouping  = "stacked"
-    bar.title     = f"Curva ABC — Valor Total por Item  ({cfg['name']})"
-    bar.y_axis.title = "Valor Total (R$)"
-    bar.x_axis.title = "Itens (ordenados por V.T. decrescente)"
-    bar.style     = 10
-    bar.width     = 26
-    bar.height    = 14
+    bar.type = "col"
+    ser_bar = Series(Reference(ws, min_col=19, min_row=DS, max_row=DE), title="% Individual \U0001f4ca")
+    ser_bar.graphicalProperties.solidFill = BLUE_BAR
+    ser_bar.graphicalProperties.line.solidFill = "1A4E8A"
+    bar.series.append(ser_bar)
+    bar.set_categories(Reference(ws, min_col=18, min_row=DS, max_row=DE))
 
-    ser_a = Series(Reference(ws, min_col=19, min_row=DS, max_row=DE), title="Classe A")
-    ser_a.graphicalProperties.solidFill = GREEN
-    ser_a.graphicalProperties.line.solidFill = GREEN_DARK
-
-    ser_b = Series(Reference(ws, min_col=20, min_row=DS, max_row=DE), title="Classe B")
-    ser_b.graphicalProperties.solidFill = GOLD
-    ser_b.graphicalProperties.line.solidFill = GOLD_DARK
-
-    ser_c = Series(Reference(ws, min_col=21, min_row=DS, max_row=DE), title="Classe C")
-    ser_c.graphicalProperties.solidFill = RED
-    ser_c.graphicalProperties.line.solidFill = RED_DARK
-
-    bar.series.append(ser_a)
-    bar.series.append(ser_b)
-    bar.series.append(ser_c)
-    bar.set_categories(Reference(ws, min_col=16, min_row=DS, max_row=DE))
-    ws.add_chart(bar, f"A{chart_row}")
-
-    # Chart 2: Line chart — Curva de Pareto (% acumulado)
+    # ─ LineChart: % acumulado (curva de Pareto) ─
     line = LineChart()
-    line.title        = f"Curva de Pareto — % Acumulado  ({cfg['name']})"
-    line.y_axis.title = "% Acumulado"
-    line.x_axis.title = "Itens (ordem decrescente de V.T.)"
-    line.y_axis.numFmt = '0%'
-    line.y_axis.scaling.min = 0
-    line.y_axis.scaling.max = 1
-    line.style     = 10
-    line.width     = 26
-    line.height    = 14
+    ser_line = Series(Reference(ws, min_col=20, min_row=DS, max_row=DE), title="% Acumulado \U0001f4c8")
+    ser_line.graphicalProperties.line.solidFill = RED_DARK
+    ser_line.graphicalProperties.line.width      = 28000  # linha grossa
+    ser_line.smooth = True  # curva suave como na imagem
+    line.series.append(ser_line)
 
-    ser_p = Series(Reference(ws, min_col=18, min_row=DS, max_row=DE), title="% Acumulado")
-    ser_p.graphicalProperties.line.solidFill = GREEN
-    ser_p.graphicalProperties.line.width     = 28000
-    ser_p.smooth = True
-    line.series.append(ser_p)
+    # ─ Combina os três chart types ─
+    area += bar
+    area += line
 
-    # 80% reference
-    ser_80 = Series(Reference(ws, min_col=17, min_row=DS - 1, max_row=DS - 1), title="Limite A (80%)")
-    line.series.append(ser_80)
+    ws.add_chart(area, f"A{chart_row}")
 
-    line.set_categories(Reference(ws, min_col=16, min_row=DS, max_row=DE))
-    # Place line chart to the right
-    right_col = get_column_letter(14)  # col N
-    ws.add_chart(line, f"{right_col}{chart_row}")
-
-    # ---- Footer banner ----
-    footer_row = chart_row + 30
-    ws.row_dimensions[footer_row].height = 16
-    ws.merge_cells(f"A{footer_row}:H{footer_row}")
-    fc = ws.cell(row=footer_row, column=1,
-                 value=f"  CURVA ABC REGGAE  |  {cfg['title']}  |  One Love, One Data  |  2026")
-    fc.fill = fill(BLACK); fc.font = font(bold=True, color=GREEN, size=9)
-    fc.alignment = align()
-
-    # ---- Conditional formatting ----
+    # ── Formatação Condicional ──
     rng = f"A{DS}:H{DE}"
-    ws.conditional_formatting.add(rng, FormulaRule(
-        formula=[f'$A{DS}="A"'], fill=PatternFill(fill_type="solid", fgColor=GREEN_LIGHT),
-        font=Font(color=BLACK)))
-    ws.conditional_formatting.add(rng, FormulaRule(
-        formula=[f'$A{DS}="B"'], fill=PatternFill(fill_type="solid", fgColor=GOLD_LIGHT),
-        font=Font(color=BLACK)))
-    ws.conditional_formatting.add(rng, FormulaRule(
-        formula=[f'$A{DS}="C"'], fill=PatternFill(fill_type="solid", fgColor=RED_LIGHT),
-        font=Font(color=BLACK)))
+    for cls, clr in [("A", GREEN_LIGHT), ("B", GOLD_LIGHT), ("C", RED_LIGHT)]:
+        ws.conditional_formatting.add(rng, FormulaRule(
+            formula=[f'$A{DS}="{cls}"'],
+            fill=PatternFill(fill_type="solid", fgColor=clr),
+            font=Font(color=BLACK)))
 
-    # ---- Sheet protection ----
+    # ── Proteção ──
     ws.protection.sheet    = True
     ws.protection.password = "abc2026."
     ws.protection.enable()
     ws.protection.selectLockedCells   = False
     ws.protection.selectUnlockedCells = False
+    for r in range(DS, DE + 1):
+        for col in [4, 5]:  # Qtd. e Custo Unit. — editáveis
+            ws.cell(row=r, column=col).protection = unlock
+    ws.cell(row=6, column=5).protection = unlock  # Limite A
+    ws.cell(row=7, column=5).protection = unlock  # Limite B
 
-    # ---- Freeze panes ----
     ws.freeze_panes = f"A{DS}"
-
-    # ---- Tab color ----
-    tab_colors = {"Primeira": GREEN, "01": GOLD_DARK, "02": RED_DARK}
-    ws.sheet_properties.tabColor = tab_colors.get(cfg["name"], GREEN)
+    ws.sheet_properties.tabColor = GREEN
 
     return ws
 
 
-# ===================== INDEX SHEET =====================
-def create_index(wb):
-    ws = wb.create_sheet(title="INICIO", index=0)
+# ═══════════════════════════════════════════════════════════════════════════════
+#  ABA 3 — ⚙️ SCRIPTS
+# ═══════════════════════════════════════════════════════════════════════════════
 
-    for col_letter, w in {"A": 3, "B": 28, "C": 28, "D": 28, "E": 28, "F": 3}.items():
-        ws.column_dimensions[col_letter].width = w
-    for r in range(1, 40):
-        ws.row_dimensions[r].height = 20
-    ws.row_dimensions[2].height = 64
-    ws.row_dimensions[3].height = 28
+OFFICE_SCRIPT_TS = '''\
+/**
+ * ================================================================
+ *  🇯🇲 ONE LOVE, ONE EXCEL! — Curva ABC Reggae Automator
+ *  Office Script para Excel Web (TypeScript)
+ * ================================================================
+ *  COMO USAR:
+ *  1. Abra o arquivo no Excel Web (office.com)
+ *  2. Clique em "Automatizar" → "Novo Script"
+ *  3. Apague o código padrão e cole ESTE script inteiro
+ *  4. Clique em "Executar" 🎵
+ *
+ *  Jah bless your spreadsheet! 🌿
+ * ================================================================
+ */
+function main(workbook: ExcelScript.Workbook) {
 
-    for r in range(1, 40):
-        for c in range(1, 7):
-            ws.cell(row=r, column=c).fill = fill(DARK_BG)
+  // 🎵 CONFIGURAÇÕES — ajuste conforme sua planilha
+  const NOME_ABA      = "📊 CURVA ABC";  // Nome exato da aba
+  const LINHA_INICIO  = 10;              // Linha onde começam os dados (1-based)
+  const COL_ABC       = 1;              // Coluna da classificação ABC (A=1)
+  const COL_INICIO    = 1;              // 1ª coluna dos dados
+  const COL_FIM       = 8;             // Última coluna dos dados
+  const LIMITE_A      = 0.80;           // 80% para classe A
+  const LIMITE_B      = 0.95;           // 95% para classe B
 
-    # Reggae stripes row 1
-    for col, clr in [(2, GREEN), (3, GOLD), (4, RED), (5, BLACK)]:
-        ws.cell(row=1, column=col).fill = fill(clr)
+  // 🦁 PALETA REGGAE — Jah Colors
+  const COR_A_LINHA  = "#C8F5DB";  // Verde claro — fundo linha A
+  const COR_A_BADGE  = "#006B28";  // Verde escuro — célula ABC
+  const COR_B_LINHA  = "#FFF5B0";  // Dourado claro — fundo linha B
+  const COR_B_BADGE  = "#C8A400";  // Dourado escuro — célula ABC
+  const COR_C_LINHA  = "#FFD0D0";  // Vermelho claro — fundo linha C
+  const COR_C_BADGE  = "#990000";  // Vermelho escuro — célula ABC
+  const BRANCO       = "#FFFFFF";
+  const PRETO        = "#000000";
 
-    ws.merge_cells("B2:E2")
-    t = ws["B2"]
-    t.value = "CURVA ABC REGGAE"
-    t.fill = fill(BLACK); t.font = Font(bold=True, color=GREEN, size=30, name="Calibri")
-    t.alignment = align()
+  // 🌿 Pega a planilha
+  const sheet = workbook.getWorksheet(NOME_ABA);
+  if (!sheet) {
+    console.log(`❌ Aba "${NOME_ABA}" não encontrada! Verifique o nome exato.`);
+    return;
+  }
 
-    ws.merge_cells("B3:E3")
-    s = ws["B3"]
-    s.value = "Dashboard Profissional de Analise de Estoque"
-    s.fill = fill(BLACK); s.font = font(italic=True, color=GOLD, size=13)
-    s.alignment = align()
+  // 📊 Descobre a última linha com dados
+  const usedRange  = sheet.getUsedRange();
+  if (!usedRange) { console.log("❌ Planilha vazia, mon!"); return; }
+  const ultimaLinha = usedRange.getLastRow().getRowIndex() + 1; // 1-based
 
-    ws.merge_cells("B4:E4")
-    ws["B4"].fill = fill(BLACK)
-    for col, clr in [(2, GREEN), (3, GOLD), (4, RED), (5, GREEN)]:
-        ws.cell(row=4, column=col).fill = fill(clr)
+  console.log(`🎵 Iniciando coloração reggae... Verificando linhas ${LINHA_INICIO} até ${ultimaLinha}`);
 
-    info = [
-        (6,  "Classificacao ABC",
-             ["A = ate 80% do valor total", "B = 80% a 95% do valor", "C = 95% a 100% do valor"], GREEN),
-        (11, "Abas Disponiveis",
-             ["Primeira: 10 itens", "Aba 01: 20 itens", "Aba 02: 30 itens"], GOLD_DARK),
-        (16, "Como Usar",
-             ["1. Va para a aba desejada", "2. Edite Quant. e Custo Unit.", "3. ABC recalcula automaticamente"], RED_DARK),
-        (21, "Protecao da Planilha",
-             ["Senha: abc2026.", "Colunas D e E liberadas para edicao", "Demais celulas protegidas"], GREEN_DARK),
-    ]
+  let countA = 0, countB = 0, countC = 0, skip = 0;
 
-    for start_row, title_txt, lines, clr in info:
-        ws.merge_cells(start_row=start_row, start_column=2, end_row=start_row, end_column=5)
-        c = ws.cell(row=start_row, column=2, value=title_txt)
-        c.fill = fill(clr); c.font = font(bold=True, size=12)
-        c.alignment = align(); c.border = border(color=BLACK)
+  // ☀️ Loop linha por linha — Bob Marley style: um passo de cada vez
+  for (let row = LINHA_INICIO; row <= ultimaLinha; row++) {
+    const cellABC  = sheet.getCell(row - 1, COL_ABC - 1);         // 0-based
+    const valorABC = String(cellABC.getValue() ?? "").trim().toUpperCase();
 
-        for j, line in enumerate(lines):
-            r = start_row + 1 + j
-            ws.merge_cells(start_row=r, start_column=2, end_row=r, end_column=5)
-            c = ws.cell(row=r, column=2, value=line)
-            c.fill = fill(DARK_BG)
-            c.font = font(color=GOLD_LIGHT if clr == GOLD_DARK else WHITE, size=10)
-            c.alignment = align(h="left"); c.border = border(color=clr)
+    if (valorABC !== "A" && valorABC !== "B" && valorABC !== "C") {
+      skip++;
+      continue;
+    }
 
-    ws.merge_cells("B36:E36")
-    f = ws["B36"]
-    f.value = "One Love, One Data  |  CURVA ABC REGGAE  |  2026"
-    f.fill = fill(BLACK); f.font = font(bold=True, color=GREEN, size=9)
-    f.alignment = align()
+    // 🌊 Range da linha inteira (colunas de dados)
+    const rowRange = sheet.getRangeByIndexes(
+      row - 1, COL_INICIO - 1, 1, COL_FIM
+    );
 
-    ws.sheet_properties.tabColor = BLACK
+    let corLinha: string;
+    let corBadge: string;
+
+    if (valorABC === "A") {
+      corLinha = COR_A_LINHA; corBadge = COR_A_BADGE; countA++;
+    } else if (valorABC === "B") {
+      corLinha = COR_B_LINHA; corBadge = COR_B_BADGE; countB++;
+    } else {
+      corLinha = COR_C_LINHA; corBadge = COR_C_BADGE; countC++;
+    }
+
+    // 🥁 Pinta a linha toda
+    rowRange.getFormat().getFill().setColor(corLinha);
+    rowRange.getFormat().getFont().setColor(PRETO);
+
+    // 🦁 Destaca o badge ABC com cor sólida e negrito
+    cellABC.getFormat().getFill().setColor(corBadge);
+    cellABC.getFormat().getFont().setColor(BRANCO);
+    cellABC.getFormat().getFont().setBold(true);
+    cellABC.getFormat().getFont().setSize(12);
+    cellABC.getFormat().setHorizontalAlignment(ExcelScript.HorizontalAlignment.center);
+  }
+
+  // 🇯🇲 Relatório final — One Love!
+  const total = countA + countB + countC;
+  console.log("\\n╔══════════════════════════════════════════╗");
+  console.log("║   🇯🇲 ONE LOVE, ONE EXCEL! 🇯🇲           ║");
+  console.log("╠══════════════════════════════════════════╣");
+  console.log(`║  🟢 Classe A: ${String(countA).padEnd(3)} itens — campeões de valor  ║`);
+  console.log(`║  🟡 Classe B: ${String(countB).padEnd(3)} itens — médios necessários ║`);
+  console.log(`║  🔴 Classe C: ${String(countC).padEnd(3)} itens — a longa cauda      ║`);
+  console.log(`║  📊 Total   : ${String(total).padEnd(3)} itens classificados       ║`);
+  console.log("╚══════════════════════════════════════════╝");
+  console.log("✅ Curva ABC colorida com reggae! Jah bless your data! 🌿");
+}
+'''
+
+def create_scripts_sheet(wb):
+    ws = wb.create_sheet(title="⚙️ SCRIPTS")
+
+    for c, w in {"A":4,"B":6,"C":100,"D":6}.items():
+        ws.column_dimensions[c].width = w
+
+    # Background
+    for r in range(1, 120):
+        ws.row_dimensions[r].height = 16
+        for c in range(1, 5):
+            ws.cell(row=r, column=c).fill = F(DARK_BG)
+
+    # Faixa reggae
+    ws.row_dimensions[1].height = 8
+    for col, clr in [(1,GREEN),(2,GOLD),(3,RED),(4,BLACK)]:
+        ws.cell(row=1, column=col).fill = F(clr)
+
+    # Título
+    ws.row_dimensions[2].height = 56
+    ws.cell(row=2, column=2, value="⚙️  OFFICE SCRIPTS  —  TypeScript para Excel Web").fill = F(BLACK)
+    c = ws.cell(row=2, column=2)
+    c.value = "⚙️  OFFICE SCRIPTS — One Love, One Excel! \U0001f1ef\U0001f1f2"
+    c.fill = F(BLACK); c.font = Font(bold=True, color=GREEN, size=22, name="Calibri"); c.alignment = A()
+
+    # Instruções
+    def instrucao(row, text, bg, fg=WHITE, bold=False, size=10):
+        ws.row_dimensions[row].height = 18
+        cx = ws.cell(row=row, column=2, value=text)
+        cx.fill = F(bg); cx.font = Ft(bold=bold, color=fg, size=size); cx.alignment = A(h="left")
+        cx.border = B(color=bg)
+        return cx
+
+    instrucao(3,  "\U0001f4cb  COMO USAR O SCRIPT ABAIXO:", GREEN_DARK, WHITE, True, 11)
+    instrucao(4,  "  1️⃣  Abra seu arquivo .xlsx no Excel Web (office.com ou Microsoft 365)",
+              "2A2A2A")
+    instrucao(5,  "  2️⃣  Clique na aba \"Automatizar\" no menu superior do Excel Web",
+              "2A2A2A")
+    instrucao(6,  "  3️⃣  Clique em \"Novo Script\" e apague o código padrão",
+              "2A2A2A")
+    instrucao(7,  "  4️⃣  Copie TODO o código abaixo e cole no editor de scripts",
+              "2A2A2A")
+    instrucao(8,  "  5️⃣  Ajuste as constantes no topo (NOME_ABA, LINHA_INICIO, etc.) se necessário",
+              "2A2A2A")
+    instrucao(9,  "  6️⃣  Clique em \"Executar\" \U0001f3b5  —  As cores reggae serão aplicadas!",
+              "2A2A2A")
+    instrucao(10, "  ✅  O script colore as linhas: Verde (A) | Dourado (B) | Vermelho (C)",
+              GREEN_DARK, WHITE, True)
+    instrucao(11, "  ⚠️  VBA não roda no Excel Web — use este Office Script (TypeScript) no lugar",
+              GOLD_DARK, BLACK, True)
+
+    ws.row_dimensions[12].height = 10
+
+    # Cabeçalho do código
+    instrucao(13, "  \U0001f4dc  CÓDIGO TYPESCRIPT — Copie tudo abaixo:", BLACK, GOLD, True, 11)
+    ws.row_dimensions[13].height = 22
+
+    # Código TypeScript — uma linha por célula
+    code_start = 14
+    lines = OFFICE_SCRIPT_TS.split('\n')
+    for i, line in enumerate(lines):
+        r = code_start + i
+        ws.row_dimensions[r].height = 15
+        cx = ws.cell(row=r, column=2, value=line if line else " ")
+        cx.fill = F("0D0D0D")
+        # Coloração sintática simples
+        stripped = line.strip()
+        if stripped.startswith("//") or stripped.startswith("*") or stripped.startswith("/**") or stripped.startswith("*/"):
+            cx.font = Font(color="6A9955", size=9, name="Courier New", italic=True)  # verde = comentário
+        elif any(kw in line for kw in ["function","const","let","if","else","for","return","string","number"]):
+            cx.font = Font(color="569CD6", size=9, name="Courier New", bold=False)  # azul = keyword
+        elif stripped.startswith("console."):
+            cx.font = Font(color="FFD700", size=9, name="Courier New")  # dourado = console
+        else:
+            cx.font = Font(color="D4D4D4", size=9, name="Courier New")  # branco/cinza = código normal
+        cx.alignment = Alignment(horizontal="left", vertical="center")
+        cx.border = Border(left=Side(style="thin", color="1A1A2E"), right=Side(style="thin", color="1A1A2E"),
+                           top=Side(style="hair", color="1A1A2E"), bottom=Side(style="hair", color="1A1A2E"))
+
+    # Pós código
+    after_row = code_start + len(lines) + 1
+    ws.row_dimensions[after_row].height = 10
+    instrucao(after_row + 1,
+              "\U0001f1ef\U0001f1f2  Jah bless your automation! One Love, One Excel!  \U0001f33f",
+              BLACK, GREEN, True, 10)
+
+    ws.sheet_properties.tabColor = RED_DARK
     return ws
 
 
-# ===================== MAIN =====================
+# ═══════════════════════════════════════════════════════════════════════════════
+#  MAIN
+# ═══════════════════════════════════════════════════════════════════════════════
 def main():
-    output = "/home/user/Zyth/curva_abc_reggae.xlsx"
+    OUTPUT = "/home/user/Zyth/curva_abc_reggae.xlsx"
+
     wb = Workbook()
     wb.remove(wb.active)
 
-    create_index(wb)
+    print("  🇯🇲 Criando aba INICIO...")
+    create_inicio(wb)
 
-    for cfg in SHEET_CONFIGS:
-        print(f"  Building sheet: {cfg['name']} ({len(cfg['items'])} items)...")
-        create_sheet(wb, cfg)
+    print("  📊 Criando aba CURVA ABC (com gráfico de faixas)...")
+    create_abc_sheet(wb)
 
-    wb.properties.title   = "Curva ABC Reggae"
-    wb.properties.subject = "Analise de Estoque ABC - Reggae"
-    wb.properties.creator = "CURVA ABC REGGAE"
+    print("  ⚙️ Criando aba SCRIPTS (TypeScript Office Scripts)...")
+    create_scripts_sheet(wb)
 
-    wb.save(output)
+    wb.properties.title   = "Curva ABC Reggae — One Love, One Excel!"
+    wb.properties.subject = "Dashboard ABC — Reggae Colors — Office Scripts"
+    wb.properties.creator = "🇯🇲 Curva ABC Reggae"
+
+    wb.save(OUTPUT)
+
     import os
-    size = os.path.getsize(output)
-    print(f"Saved: {output}  ({size/1024:.1f} KB)")
+    size = os.path.getsize(OUTPUT)
+    print(f"\n✅  Salvo: {OUTPUT}")
+    print(f"📦  Tamanho: {size/1024:.1f} KB")
+    print("🇯🇲  One Love, One Excel!")
 
 
 if __name__ == "__main__":
