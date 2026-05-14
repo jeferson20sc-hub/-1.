@@ -615,10 +615,102 @@ def main():
     print("  Calendario 2026...")
     create_calendar_sheet(wb, 2026)
 
+# ═══════════════════════════════════════════════════════════════════════════════
+#  PÓS-PROCESSAMENTO: injetar numCache/strCache nos gráficos
+#  openpyxl não gera cache — sem ele, Excel mobile/web deixa o gráfico em branco
+# ═══════════════════════════════════════════════════════════════════════════════
+def _xe(s):
+    """Escape XML entities in cell values."""
+    return str(s).replace("&","&amp;").replace("<","&lt;").replace(">","&gt;").replace('"',"&quot;")
+
+def _str_cache(labels):
+    n = len(labels)
+    pts = "".join(f'<pt idx="{i}"><v>{_xe(lbl)}</v></pt>' for i, lbl in enumerate(labels))
+    return f'<strCache><ptCount val="{n}"/>{pts}</strCache>'
+
+def _num_cache(values, fmt="General"):
+    n = len(values)
+    pts = "".join(f'<pt idx="{i}"><v>{v}</v></pt>' for i, v in enumerate(values))
+    return f'<numCache><formatCode>{fmt}</formatCode><ptCount val="{n}"/>{pts}</numCache>'
+
+def inject_chart_caches(xlsx_path):
+    """
+    Post-process all chart XMLs in the xlsx to add numCache/strCache.
+    Maps sheet name + column letter to precomputed sorted_data values.
+    """
+    import zipfile, os, re
+
+    # Build lookup: sheet_name -> col_letter -> [values]
+    lookup = {}
+    for cfg in SHEETS:
+        sd, _ = classify(cfg["items"])
+        n      = len(sd)
+        labels = [f"{d['abc']} | {d['sku']} | {d['desc'][:20]}" for d in sd]
+        lookup[cfg["name"]] = {
+            "P": labels,                                                  # strCache
+            "Q": [d["vt"]  if d["abc"]=="A" else 0   for d in sd],       # numCache
+            "R": [d["vt"]  if d["abc"]=="B" else 0   for d in sd],       # numCache
+            "S": [d["vt"]  if d["abc"]=="C" else 0   for d in sd],       # numCache
+            "T": [round(d["pct_acc"], 5)              for d in sd],       # numCache %
+        }
+
+    def _parse_ref(formula):
+        """Extract (sheet_name, col_letter) from a formula like 'Sheet'!$P$12:$P$21."""
+        sm = re.search(r"'([^']+)'!\$([A-Z]+)\$", formula)
+        return (sm.group(1), sm.group(2)) if sm else (None, None)
+
+    def patch_chart(xml):
+        def add_str_cache(m):
+            formula = m.group(1)
+            sheet, col = _parse_ref(formula)
+            if sheet in lookup and col in lookup[sheet]:
+                return f'<strRef><f>{formula}</f>{_str_cache(lookup[sheet][col])}</strRef>'
+            return m.group(0)
+
+        def add_num_cache(m):
+            formula = m.group(1)
+            sheet, col = _parse_ref(formula)
+            if sheet in lookup and col in lookup[sheet]:
+                fmt = "0%" if col == "T" else "General"
+                return f'<numRef><f>{formula}</f>{_num_cache(lookup[sheet][col], fmt)}</numRef>'
+            return m.group(0)
+
+        xml = re.sub(r'<strRef><f>([^<]+)</f></strRef>', add_str_cache, xml)
+        xml = re.sub(r'<numRef><f>([^<]+)</f></numRef>', add_num_cache, xml)
+        return xml
+
+    # Rewrite zip with patched chart XMLs
+    tmp = xlsx_path + ".tmp"
+    with zipfile.ZipFile(xlsx_path, 'r') as zin:
+        with zipfile.ZipFile(tmp, 'w', zipfile.ZIP_DEFLATED) as zout:
+            for item in zin.infolist():
+                data = zin.read(item.filename)
+                if re.match(r'xl/charts/chart\d+\.xml$', item.filename):
+                    data = patch_chart(data.decode('utf-8')).encode('utf-8')
+                zout.writestr(item, data)
+    os.replace(tmp, xlsx_path)
+
+
+# ── MAIN ───────────────────────────────────────────────────────────────────────
+def main():
+    OUTPUT = "/home/user/Zyth/curva_abc_reggae.xlsx"
+    wb = Workbook()
+    wb.remove(wb.active)
+
+    for cfg in SHEETS:
+        print(f"  {cfg['name']}  ({len(cfg['items'])} itens)...")
+        create_data_sheet(wb, cfg)
+
+    print("  Calendario 2026...")
+    create_calendar_sheet(wb, 2026)
+
     wb.properties.title   = "Curva ABC Reggae — Super Version"
     wb.properties.subject = "Dashboard ABC Pareto | 3 abas + Calendario | Reggae"
     wb.properties.creator = "Curva ABC Reggae"
     wb.save(OUTPUT)
+
+    print("  Injetando cache nos graficos (mobile fix)...")
+    inject_chart_caches(OUTPUT)
 
     import os
     size = os.path.getsize(OUTPUT)
