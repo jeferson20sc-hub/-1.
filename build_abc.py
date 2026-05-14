@@ -17,7 +17,7 @@ Improvements over v5:
 from copy import copy
 
 from openpyxl import load_workbook
-from openpyxl.chart import BarChart, LineChart, PieChart, Reference
+from openpyxl.chart import AreaChart, BarChart, LineChart, PieChart, Reference
 from openpyxl.chart.label import DataLabelList
 from openpyxl.chart.layout import Layout, ManualLayout
 from openpyxl.chart.marker import DataPoint
@@ -43,14 +43,19 @@ SRC = "/root/.claude/uploads/af5f62b9-abe8-4996-80a8-9ffafd174255/0cb5b4c3-curva
 DST = "output/curva_abc_reggae_6.xlsx"
 
 
-# Reggae palette
+# Reggae palette - vivid bands (per user choice) + cyan bars + red line
 GREEN = "1FAE4D"
-GREEN_LIGHT = "D8F1DC"
+GREEN_LIGHT = "9FE3A5"   # vivid reggae green band (A region)
+GREEN_VERY_LIGHT = "EAF7EB"
 YELLOW = "F4C81E"
-YELLOW_LIGHT = "FFF4CC"
+YELLOW_LIGHT = "FFE066"  # vivid reggae yellow band (B region)
+YELLOW_VERY_LIGHT = "FFF6D3"
 RED = "D4322B"
-RED_LIGHT = "FBD7D5"
-BLUE = "2E86C1"
+RED_LIGHT = "FFB07A"     # vivid orange/red band (C region)
+RED_VERY_LIGHT = "FBD7D5"
+BLUE = "3FB3E5"          # cyan bar fill
+BLUE_DARK = "1A78A0"
+LINE_RED = "C0392B"
 DARK = "1B1B1B"
 CREAM = "FFF8E7"
 
@@ -61,6 +66,20 @@ SHEETS = [
     ("🟡 01",       12, 31),
     ("🔴 02",       12, 41),
 ]
+
+
+def make_outer_shadow(color="000000", dist=38100, blur=50000):
+    """Drawing-ML EffectList with a soft drop shadow."""
+    from openpyxl.drawing.effect import EffectList, OuterShadow
+    shadow = OuterShadow(
+        blurRad=blur,
+        dist=dist,
+        dir=2700000,        # 270° = below
+        algn="ctr",
+        rotWithShape=False,
+        srgbClr=color,
+    )
+    return EffectList(outerShdw=shadow)
 
 
 def thin_border(color="888888"):
@@ -79,50 +98,53 @@ def style_solid(color):
 # ---------------------------------------------------------------------------
 def write_helper_columns(ws, first, last):
     """
-    Helper layout (hidden-ish region to the right of the data area):
-      P : Rank (1..N)
-      Q : SKU @ rank        - INDEX/MATCH on tie-broken score
-      R : V.T. @ rank       - LARGE(score) - tie offset
-      S : Class @ rank
-      T : Cumulative %      - progressive sum of R
-      U : V.T. - Classe A   - (R if class A else NA) for colored bar series
-      V : V.T. - Classe B
-      W : V.T. - Classe C
-      X : Score helper      - G + ROW/1e9 (tie-broken sort key)
+    Helper layout (to the right of the data area). Drives the live Pareto chart.
+      P  (16) Rank (1..N)
+      Q  (17) SKU @ rank            - INDEX/MATCH against tie-broken score
+      R  (18) V.T. @ rank           - same INDEX/MATCH on G
+      S  (19) Classe @ rank         - A/B/C from cumulative %
+      T  (20) % Acumulado @ rank    - progressive sum (sorted)
+      U  (21) % Individual @ rank   - R / SUM(G)
+      V  (22) Barra A (% indiv if S=A else NA)  - bar series, label "A"
+      W  (23) Barra B (% indiv if S=B else NA)
+      X  (24) Barra C (% indiv if S=C else NA)
+      Y  (25) Banda A (1 if S=A else 0)         - area band fill
+      Z  (26) Banda B
+      AA (27) Banda C
+      AB (28) score - hidden tie-breaker = G + (last-ROW)/1e9
     """
     n = last - first + 1
     g_range = f"$G${first}:$G${last}"
 
     # Headers row 11
-    ws.cell(row=11, column=16, value="Rank")        # P
-    ws.cell(row=11, column=17, value="SKU")         # Q
-    ws.cell(row=11, column=18, value="V.T. (R$)")   # R
-    ws.cell(row=11, column=19, value="Classe")      # S
-    ws.cell(row=11, column=20, value="% Acumulado") # T
-    ws.cell(row=11, column=21, value="Classe A")    # U
-    ws.cell(row=11, column=22, value="Classe B")    # V
-    ws.cell(row=11, column=23, value="Classe C")    # W
-    ws.cell(row=11, column=24, value="score")       # X  (hidden)
+    header_map = {
+        16: "Rank", 17: "SKU", 18: "V.T. (R$)", 19: "Classe",
+        20: "% Acumulado", 21: "% Individual",
+        22: "A", 23: "B", 24: "C",
+        25: "Banda A", 26: "Banda B", 27: "Banda C",
+        28: "score",
+    }
+    for col, text in header_map.items():
+        ws.cell(row=11, column=col, value=text)
 
     header_font = Font(bold=True, color="FFFFFF")
     header_fill = PatternFill("solid", fgColor=DARK)
-    for col in range(16, 25):
+    for col in range(16, 29):
         c = ws.cell(row=11, column=col)
         c.font = header_font
         c.fill = header_fill
         c.alignment = Alignment(horizontal="center", vertical="center")
 
-    # Score column X: tie-broken value = G + (last - ROW)/1e9 so earlier rows
-    # rank slightly higher when V.T. is equal -> stable display order.
+    # AB : tie-broken score = G + (last-ROW)/1e9
     for r in range(first, last + 1):
-        ws.cell(row=r, column=24,
+        ws.cell(row=r, column=28,
                 value=f"=IFERROR($G{r}+({last}-ROW())/1000000000,0)")
 
     # P : rank 1..N
     for i in range(n):
         ws.cell(row=first + i, column=16, value=i + 1)
 
-    score_range = f"$X${first}:$X${last}"
+    score_range = f"$AB${first}:$AB${last}"
     sku_range   = f"$B${first}:$B${last}"
     total_g     = f"SUM({g_range})"
 
@@ -134,44 +156,58 @@ def write_helper_columns(ws, first, last):
         ws.cell(row=r, column=17,
                 value=f"=IFERROR(INDEX({sku_range},MATCH(LARGE({score_range},{rank_cell}),{score_range},0)),\"\")")
 
-        # R : V.T. at this rank - use LARGE on G with tie offset, then floor
-        # by reading the actual G via the SKU we just selected.
+        # R : V.T. at this rank
         ws.cell(row=r, column=18,
                 value=f"=IFERROR(INDEX({g_range},MATCH(LARGE({score_range},{rank_cell}),{score_range},0)),0)")
 
         # T : cumulative % (progressive over sorted R)
         if i == 0:
-            ws.cell(row=r, column=20,
-                    value=f"=IFERROR($R{r}/{total_g},0)")
+            ws.cell(row=r, column=20, value=f"=IFERROR($R{r}/{total_g},0)")
         else:
-            ws.cell(row=r, column=20,
-                    value=f"=IFERROR($T{r-1}+$R{r}/{total_g},0)")
+            ws.cell(row=r, column=20, value=f"=IFERROR($T{r-1}+$R{r}/{total_g},0)")
 
         # S : class based on cumulative %
         ws.cell(row=r, column=19,
                 value=f"=IF($T{r}<=$B$9,\"A\",IF($T{r}<=$B$10,\"B\",\"C\"))")
 
-        # U/V/W : value if class matches, NA() otherwise (so chart skips it
-        # for non-matching classes and the bar takes the right color).
-        ws.cell(row=r, column=21,
-                value=f"=IF($S{r}=\"A\",$R{r},NA())")
-        ws.cell(row=r, column=22,
-                value=f"=IF($S{r}=\"B\",$R{r},NA())")
-        ws.cell(row=r, column=23,
-                value=f"=IF($S{r}=\"C\",$R{r},NA())")
+        # U : % individual at this rank
+        ws.cell(row=r, column=21, value=f"=IFERROR($R{r}/{total_g},0)")
 
-        # Format
+        # V/W/X : per-class bar values (% individual) — NA() so unmatched
+        # classes leave a gap and their data label is skipped.
+        ws.cell(row=r, column=22, value=f"=IF($S{r}=\"A\",$U{r},NA())")
+        ws.cell(row=r, column=23, value=f"=IF($S{r}=\"B\",$U{r},NA())")
+        ws.cell(row=r, column=24, value=f"=IF($S{r}=\"C\",$U{r},NA())")
+
+        # Y/Z/AA : background bands - shape follows the cumulative curve
+        # (technique from the YouTube tutorial). Each is the cumulative value
+        # masked by class, with NA() outside so the area chart leaves no fill.
+        #   Y  (Banda A) only for class-A rows
+        #   Z  (Banda B) for class-A AND class-B rows (so the yellow area
+        #                continues from where green ends)
+        #   AA (Banda C) for every row (orange covers everything)
+        # Drawn order in the chart is C -> B -> A so smaller layers stay on top.
+        ws.cell(row=r, column=25, value=f"=IF($S{r}=\"A\",$T{r},NA())")
+        ws.cell(row=r, column=26, value=f"=IF(OR($S{r}=\"A\",$S{r}=\"B\"),$T{r},NA())")
+        ws.cell(row=r, column=27, value=f"=$T{r}")
+
+        # Number formats
         ws.cell(row=r, column=18).number_format = '#,##0'
         ws.cell(row=r, column=20).number_format = '0.0%'
-        ws.cell(row=r, column=21).number_format = '#,##0'
-        ws.cell(row=r, column=22).number_format = '#,##0'
-        ws.cell(row=r, column=23).number_format = '#,##0'
+        ws.cell(row=r, column=21).number_format = '0.0%'
+        ws.cell(row=r, column=22).number_format = '0.0%'
+        ws.cell(row=r, column=23).number_format = '0.0%'
+        ws.cell(row=r, column=24).number_format = '0.0%'
+        ws.cell(row=r, column=25).number_format = '0.0%'
+        ws.cell(row=r, column=26).number_format = '0.0%'
+        ws.cell(row=r, column=27).number_format = '0.0%'
 
-    # Hide helper score column
-    ws.column_dimensions['X'].hidden = True
+    # Hide score column AB
+    ws.column_dimensions['AB'].hidden = True
     # Narrower helper area
-    for col in 'PQRSTUVW':
-        ws.column_dimensions[col].width = 12
+    for col in 'PQRSTUVWXYZ':
+        ws.column_dimensions[col].width = 11
+    ws.column_dimensions['AA'].width = 11
 
 
 # ---------------------------------------------------------------------------
@@ -257,80 +293,102 @@ def add_editable_comments(ws, first, last):
 # ---------------------------------------------------------------------------
 def add_pareto_chart(ws, sheet_name, first, last):
     """
-    Combo chart:
-      - Stacked column series U/V/W (Classe A / B / C) coloured green/yellow/red
-        - Source data is the *sorted* helper area, so bars are descending.
-      - Line series T (cumulative %) on the secondary axis (0-100%).
-      - Categories = Q (sorted SKUs).
-    """
-    n_rows = last - first + 1
+    Composite Pareto chart (matches the YouTube reference look).
 
+      Layer 1 (back)  : AreaChart with 3 series cut by class on the
+                        cumulative curve - paints reggae-coloured zones
+                        behind the bars, with the top edge following T.
+                          AA (col 27) - Banda C - laranja - draws first (back)
+                          Z  (col 26) - Banda B - amarelo
+                          Y  (col 25) - Banda A - verde   - draws last (front)
+      Layer 2         : BarChart, stacked (only one series non-NA per bar)
+                        all painted the same cyan blue. Series names are
+                        "A"/"B"/"C" so showSerName puts the class letter
+                        above the bar.
+                          V (22) Bar A  W (23) Bar B  X (24) Bar C
+      Layer 3 (front) : LineChart - thick red smooth cumulative line.
+                          T (20)
+      Y-axis          : single 0-100% scale, no decimals. The secondary
+                        axes openpyxl creates when combining are kept at
+                        the same 0..1 scale but their labels are hidden.
+      Categories      : Q (col 17) - sorted SKUs.
+    """
+    # --- Background bands ---------------------------------------------------
+    area = AreaChart()
+    area.title = "CURVA ABC"
+    area.height = 12
+    area.width = 28
+    area.legend = None
+    area.y_axis.scaling.min = 0
+    area.y_axis.scaling.max = 1
+    area.y_axis.number_format = "0%"
+    area.y_axis.majorUnit = 0.1
+    area.y_axis.majorTickMark = "out"
+    area.x_axis.title = None
+    area.y_axis.title = None
+
+    cats_ref = Reference(ws, min_col=17, min_row=first, max_row=last)
+
+    # Order matters: first series drawn BEHIND, last drawn IN FRONT.
+    # We want green (A, smallest) on top -> add C then B then A.
+    band_specs = [
+        (27, RED_LIGHT),     # AA - Banda C (orange) BACK
+        (26, YELLOW_LIGHT),  # Z  - Banda B (yellow) MID
+        (25, GREEN_LIGHT),   # Y  - Banda A (green)  FRONT
+    ]
+    for col_idx, _ in band_specs:
+        ref = Reference(ws, min_col=col_idx, min_row=11, max_row=last)
+        area.add_data(ref, titles_from_data=True)
+    area.set_categories(cats_ref)
+
+    for s, (_, color) in zip(area.series, band_specs):
+        s.graphicalProperties = GraphicalProperties(solidFill=color)
+        s.graphicalProperties.line = LineProperties(noFill=True)
+
+    # --- Blue bars (% Individual, labelled A/B/C) ---------------------------
     bar = BarChart()
     bar.type = "col"
     bar.grouping = "stacked"
     bar.overlap = 100
-    bar.title = "CURVA ABC"
-    bar.y_axis.title = "V.T. (R$)"
-    bar.x_axis.title = "SKU (ordenado por V.T.)"
-    bar.height = 11
-    bar.width = 26
-    bar.legend.position = "b"
-
-    # Data ranges for Classe A / B / C
-    # Row 11 is the header (titles_from_data=True picks them up).
-    for col_idx, color in [(21, GREEN), (22, YELLOW), (23, RED)]:
-        data_ref = Reference(
-            ws,
-            min_col=col_idx,
-            max_col=col_idx,
-            min_row=11,
-            max_row=last,
-        )
-        bar.add_data(data_ref, titles_from_data=True)
-
-    # Category labels: sorted SKU column Q
-    cats_ref = Reference(ws, min_col=17, min_row=first, max_row=last)
+    bar.gapWidth = 60  # thicker bars per the video
+    for col_idx in (22, 23, 24):  # V W X
+        ref = Reference(ws, min_col=col_idx, min_row=11, max_row=last)
+        bar.add_data(ref, titles_from_data=True)
     bar.set_categories(cats_ref)
+    for s in bar.series:
+        s.graphicalProperties = GraphicalProperties(solidFill=BLUE)
+        s.graphicalProperties.line = LineProperties(solidFill=BLUE_DARK, w=6000)
+        s.graphicalProperties.effectLst = make_outer_shadow(dist=25000, blur=40000)
+        s.dLbls = DataLabelList(showSerName=True)
+        s.dLbls.position = "t"
 
-    # Colour each series
-    for series, color, outline in [
-        (bar.series[0], GREEN, "0E7A2E"),
-        (bar.series[1], YELLOW, "B89200"),
-        (bar.series[2], RED, "8A1F1A"),
-    ]:
-        series.graphicalProperties = GraphicalProperties(solidFill=color)
-        series.graphicalProperties.line = LineProperties(solidFill=outline)
-
-    # Line chart for cumulative % - secondary axis
+    # --- Red cumulative line ------------------------------------------------
     line = LineChart()
     cum_ref = Reference(ws, min_col=20, min_row=11, max_row=last)
     line.add_data(cum_ref, titles_from_data=True)
-    line.y_axis.axId = 200
-    line.y_axis.crosses = "max"
-    line.y_axis.scaling.min = 0
-    line.y_axis.scaling.max = 1
-    line.y_axis.number_format = "0%"
-    line.y_axis.majorUnit = 0.1
-    line.y_axis.title = "% Acumulado"
-
-    # Style the cumulative line: thick red with markers
     s = line.series[0]
     s.graphicalProperties = GraphicalProperties()
-    s.graphicalProperties.line = LineProperties(solidFill="C0392B", w=28000)
+    s.graphicalProperties.line = LineProperties(solidFill=LINE_RED, w=44450)  # 3.5pt
+    s.graphicalProperties.effectLst = make_outer_shadow(dist=20000, blur=30000)
     s.smooth = True
 
-    # Add data labels on the line so the user sees percentages
-    s.dLbls = DataLabelList(showVal=True)
-    s.dLbls.numFmt = "0%"
+    # --- Combine ------------------------------------------------------------
+    area += bar
+    area += line
 
-    bar += line
-
-    # Bigger title font, dark text
-    bar.y_axis.numFmt = '#,##0'
+    # The += pushes bar/line onto a secondary axis. Keep the same 0..1 scale
+    # so visually they line up with the area's primary axis, and hide the
+    # secondary axis labels so the user only sees ONE % scale on the left.
+    bar.y_axis.scaling.min = 0
+    bar.y_axis.scaling.max = 1
+    bar.y_axis.delete = True
+    line.y_axis.scaling.min = 0
+    line.y_axis.scaling.max = 1
+    line.y_axis.delete = True
 
     # Anchor below the data table.
     anchor = f"A{last + 3}"
-    ws.add_chart(bar, anchor)
+    ws.add_chart(area, anchor)
 
 
 # ---------------------------------------------------------------------------
@@ -338,7 +396,7 @@ def add_pareto_chart(ws, sheet_name, first, last):
 # ---------------------------------------------------------------------------
 def clear_legacy_helper(ws, first, last):
     for r in range(first, last + 1):
-        for col in range(16, 25):
+        for col in range(16, 30):
             ws.cell(row=r, column=col).value = None
 
 
