@@ -23,7 +23,10 @@ BLK      = "000000";  WHT    = "FFFFFF";  DARK    = "141414"
 GDARK2   = "888888";  GMID   = "DDDDDD";  GBORDER = "CCCCCC"
 LINE_CLR = "0A0A0A"   # preto-quase para a curva Pareto
 
-def F(c): return PatternFill(fill_type="solid", fgColor=c)
+def F(c):
+    # ARGB: "FF" prefix = fully opaque (required; openpyxl defaults to "00" alpha
+    # which is transparent — fine for cell xf fills but BREAKS CF dxf fills)
+    return PatternFill(fill_type="solid", fgColor="FF"+c if len(c)==6 else c)
 def Ft(bold=False, color=WHT, size=11, italic=False, name="Calibri"):
     return Font(bold=bold, color=color, size=size, italic=italic, name=name)
 def B(style="thin", color=BLK):
@@ -286,12 +289,12 @@ def create_data_sheet(wb, cfg):
         cx.alignment = Al(wrap=(col==4)); cx.border = B(color=G_DARK)
 
     # ── Linhas de dados ───────────────────────────────────────────────────────
-    # IMPORTANTE: NÃO definimos fills estáticos nas linhas B-H
-    # A formatação condicional (abaixo) é a ÚNICA fonte de cor das linhas
-    # Isso garante que ela FUNCIONA e ATUALIZA dinamicamente
+    # Linhas escritas em ordem DECRESCENTE de V.T. (sorted_data) — padrão Pareto.
+    # SEM fills estáticos nas linhas; CF é a ÚNICA fonte de cor das linhas.
     unlock = Protection(locked=False)
 
-    for i, (sku, desc, cod, qty, cost) in enumerate(raw):
+    for i, d in enumerate(sorted_data):
+        sku, desc, cod, qty, cost = d["sku"], d["desc"], d["cod"], d["qty"], d["cost"]
         row = DS + i
 
         # ── Col A: fórmula ABC (sem fill estático — CF cuida disso) ──────────
@@ -350,9 +353,11 @@ def create_data_sheet(wb, cfg):
         cx.font = Ft(color=BLK, size=10)
         cx.alignment = Al(); cx.border = B(color=GBORDER); cx.number_format = '0.00%'
 
-        # ── Col I: % Acumulado (SUMIF — funciona sem precisar de ordem) ───────
+        # ── Col I: % Acumulado — soma cumulativa progressiva (tabela ordenada por VT) ─
+        # =SUM($G$12:G12)/SUM($G$12:$G$21): para row 12 = G12/Total; row 13 = (G12+G13)/Total
+        # Mais robusto que SUMIF: não falha com V.T. duplicados
         cx = ws.cell(row=row, column=9,
-                     value=f'=IFERROR(SUMIF($G${DS}:$G${DE},">="&G{row},$G${DS}:$G${DE})/SUM($G${DS}:$G${DE}),0)')
+                     value=f'=IFERROR(SUM($G${DS}:G{row})/SUM($G${DS}:$G${DE}),0)')
         cx.font = Ft(color=BLK, size=10)
         cx.alignment = Al(); cx.border = B(color=GBORDER); cx.number_format = '0.00%'
 
@@ -396,15 +401,18 @@ def create_data_sheet(wb, cfg):
     rng_badge = f"A{DS}:A{DE}"   # só col A — badge com cor forte
 
     for cls, lite, dark, font_clr in [("A",G_LITE,G,WHT),("B",Y_LITE,Y_DARK,BLK),("C",R_LITE,R_DARK,WHT)]:
+        # FF prefix = fully opaque alpha in dxf — critical for CF fills to render
+        lite_ff = "FF"+lite if len(lite)==6 else lite
+        dark_ff = "FF"+dark if len(dark)==6 else dark
         # 1. Fundo suave na linha toda
         ws.conditional_formatting.add(rng_row, FormulaRule(
             formula=[f'$A{DS}="{cls}"'],
-            fill=PatternFill(fill_type="solid", fgColor=lite),
+            fill=PatternFill(fill_type="solid", fgColor=lite_ff),
             font=Font(color=BLK)))
         # 2. Badge escuro na col A (prioridade maior — adicionado depois)
         ws.conditional_formatting.add(rng_badge, FormulaRule(
             formula=[f'$A{DS}="{cls}"'],
-            fill=PatternFill(fill_type="solid", fgColor=dark),
+            fill=PatternFill(fill_type="solid", fgColor=dark_ff),
             font=Font(color=font_clr, bold=True, size=12)))
 
     # ── GRÁFICO — Pareto Clássico ─────────────────────────────────────────────
@@ -446,12 +454,13 @@ def create_data_sheet(wb, cfg):
 
     # ─ LineChart: % acumulado no EIXO SECUNDÁRIO (preto, curva clássica Pareto) ─
     line = LineChart()
-    line.y_axis.axId    = 200          # eixo Y secundário (direito)
+    line.y_axis.axId    = 200          # eixo Y secundário
+    line.y_axis.axPos   = "r"          # DIREITA — sem isso a linha fica sobre o eixo primário
+    line.y_axis.crosses = "max"        # cruza no máximo do eixo primário
     line.y_axis.scaling.min = 0
     line.y_axis.scaling.max = 1
     line.y_axis.numFmt  = '0%'
     line.y_axis.title   = "% Acumulado (Curva Pareto)"
-    line.y_axis.crosses = "max"        # cruza no máximo do eixo primário (lado direito)
 
     ser_l = Series(Reference(ws, min_col=20, min_row=DS, max_row=DE), title="% Acumulado")
     ser_l.graphicalProperties.line.solidFill = LINE_CLR
