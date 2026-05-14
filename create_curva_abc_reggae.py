@@ -8,6 +8,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Border, Side, Alignment
 from openpyxl.utils import get_column_letter
 from openpyxl.chart import BarChart, LineChart, Reference, Series
+from openpyxl.chart.data_source import AxDataSource, StrRef
 from openpyxl.chart.label import DataLabelList
 from openpyxl.comments import Comment
 from openpyxl.formatting.rule import FormulaRule
@@ -416,9 +417,12 @@ def create_data_sheet(wb, cfg):
             font=Font(color=font_clr, bold=True, size=12)))
 
     # ── GRÁFICO — Pareto Clássico ─────────────────────────────────────────────
-    # Barras de V.T. por produto (A=verde, B=dourado, C=vermelho) + curva % acumulado
+    # CRÍTICO: usar StrRef (não numRef) para categorias de texto — numRef deixa
+    # o gráfico em BRANCO porque Excel não consegue ler strings como números.
     chart_row = tr + 3
-    cats = Reference(ws, min_col=16, min_row=DS, max_row=DE)
+    sheet_quoted = cfg["name"].replace("'", "''")
+    cat_formula  = f"'{sheet_quoted}'!$P${DS}:$P${DE}"
+    cat_src      = AxDataSource(strRef=StrRef(f=cat_formula))  # strRef = texto
 
     # ─ BarChart: V.T. por produto colorido por classe ─
     bar = BarChart()
@@ -430,7 +434,7 @@ def create_data_sheet(wb, cfg):
     bar.height   = 16
     bar.y_axis.title  = "Valor Total (R$)"
     bar.y_axis.numFmt = 'R$ #,##0'
-    bar.x_axis.title  = "Produtos ordenados por V.T. decrescente (nome + classe no rotulo)"
+    bar.x_axis.title  = "Produtos (ordem decrescente de V.T.)"
 
     for col_off, (cls_lbl, clr, clr_line) in enumerate([
         ("Classe A", G,      G_DARK),
@@ -441,26 +445,25 @@ def create_data_sheet(wb, cfg):
         ser.graphicalProperties.solidFill      = clr
         ser.graphicalProperties.line.solidFill = clr_line
         ser.graphicalProperties.line.width     = 6000
+        ser.cat = cat_src          # strRef — sem isso o gráfico fica branco
         bar.series.append(ser)
 
-    bar.set_categories(cats)
-
     # Data labels nas barras
-    bar.dLbls            = DataLabelList()
-    bar.dLbls.showVal    = True
+    bar.dLbls             = DataLabelList()
+    bar.dLbls.showVal     = True
     bar.dLbls.showSerName = False
     bar.dLbls.showCatName = False
-    bar.dLbls.numFmt     = 'R$ #,##0'
+    bar.dLbls.numFmt      = 'R$ #,##0'
 
     # ─ LineChart: % acumulado no EIXO SECUNDÁRIO (preto, curva clássica Pareto) ─
     line = LineChart()
-    line.y_axis.axId    = 200          # eixo Y secundário
-    line.y_axis.axPos   = "r"          # DIREITA — sem isso a linha fica sobre o eixo primário
-    line.y_axis.crosses = "max"        # cruza no máximo do eixo primário
-    line.y_axis.scaling.min = 0
-    line.y_axis.scaling.max = 1
-    line.y_axis.numFmt  = '0%'
-    line.y_axis.title   = "% Acumulado (Curva Pareto)"
+    line.y_axis.axId          = 200   # eixo Y secundário
+    line.y_axis.axPos         = "r"   # DIREITA
+    line.y_axis.crosses       = "max" # cruza no máximo do eixo primário
+    line.y_axis.scaling.min   = 0
+    line.y_axis.scaling.max   = 1
+    line.y_axis.numFmt        = '0%'
+    line.y_axis.title         = "% Acumulado (Curva Pareto)"
 
     ser_l = Series(Reference(ws, min_col=20, min_row=DS, max_row=DE), title="% Acumulado")
     ser_l.graphicalProperties.line.solidFill = LINE_CLR
@@ -470,8 +473,8 @@ def create_data_sheet(wb, cfg):
     ser_l.marker.size    = 5
     ser_l.marker.graphicalProperties.solidFill      = BLK
     ser_l.marker.graphicalProperties.line.solidFill = WHT
+    ser_l.cat = cat_src           # strRef na linha também
     line.series.append(ser_l)
-    line.set_categories(cats)
 
     bar += line
     ws.add_chart(bar, f"A{chart_row}")
