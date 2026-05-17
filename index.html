@@ -158,7 +158,9 @@
               <div><label for="qtdItem">Quantidade</label><input id="qtdItem" type="number" placeholder="Ex: 10" min="1" inputmode="numeric"></div>
             </div>
             <button class="btn btn-principal" onclick="registrar()">Salvar movimentação</button>
-            <div class="aviso" id="avisoSync">Tudo salvo neste aparelho. Para enviar automaticamente ao Excel online, veja COMO-CONECTAR-EXCEL-ONLINE.md (opcional).</div>
+            <button class="btn btn-sec" style="width:100%;margin-bottom:10px" onclick="testarConexao()">🔌 Testar conexão com o Power Automate</button>
+            <div class="aviso" id="avisoSync">Cada lançamento é enviado ao Excel online (Power Automate) e também salvo neste aparelho. Sem internet, fica numa fila e reenvia sozinho.</div>
+            <div id="statusSync" style="margin-top:8px;font-size:13px;font-weight:800;color:var(--cinza)">Pronto.</div>
           </section>
           <section class="painel">
             <h3>Últimos lançamentos</h3>
@@ -285,8 +287,8 @@
       if(!cod||!t||!q||q<=0){toastMsg("Escolha o item, o tipo e a quantidade.");return}
       const it=ITEMS.find(i=>i.cod===cod);
       if(t==="Entrada")it.entrada+=q; else it.saida+=q;
-      const dataHora=new Date().toLocaleString("pt-BR");
-      const reg={text:t+" de "+q+" — "+cod+" "+it.desc+" (op: "+operador+")",data:dataHora,operador,codigo:cod,descricao:it.desc,tipo:t,qtd:q};
+      const agora=new Date();
+      const reg={text:t+" de "+q+" — "+cod+" "+it.desc+" (op: "+operador+")",data:agora.toISOString(),dataBR:agora.toLocaleString("pt-BR"),operador,codigo:cod,descricao:it.desc,tipo:t,qtd:q};
       mov.unshift(reg);
       $("tipoMovimento").value="";$("qtdItem").value="";
       salvar();renderTudo();
@@ -296,9 +298,42 @@
       toastMsg(t+" de "+nf(q)+" em "+it.cod+" registrada.");
     }
 
+    let fila=[];
+    function carregarFila(){try{fila=JSON.parse(localStorage.getItem(STORE+"_fila")||"[]")}catch(e){fila=[]}}
+    function salvarFila(){try{localStorage.setItem(STORE+"_fila",JSON.stringify(fila))}catch(e){}}
+    function setStatusSync(txt,cor){const el=$("statusSync");if(el){el.textContent=txt;el.style.color=cor||"var(--cinza)"}}
+    function postWebhook(reg){
+      // Requisição "simples" (sem header custom) => sem preflight CORS => chega no Power Automate.
+      return fetch(WEBHOOK_URL,{method:"POST",mode:"no-cors",body:JSON.stringify(reg)});
+    }
     function enviarWebhook(reg){
-      if(!WEBHOOK_URL || !WEBHOOK_URL.trim()) return;
-      try{fetch(WEBHOOK_URL,{method:"POST",mode:"no-cors",headers:{"Content-Type":"application/json"},body:JSON.stringify(reg)}).then(()=>toastMsg("Enviado para o Excel online.")).catch(()=>toastMsg("Sem internet: salvo local, será reenviado depois."));}catch(e){}
+      if(!WEBHOOK_URL || !WEBHOOK_URL.trim()){setStatusSync("Modo local (sem URL configurada).");return;}
+      if(reg) fila.push(reg);
+      salvarFila();
+      flushFila();
+    }
+    let enviando=false;
+    function flushFila(){
+      if(enviando||!fila.length||!WEBHOOK_URL.trim())return;
+      enviando=true;setStatusSync("Enviando "+fila.length+" lançamento(s) ao Excel online...","#92400e");
+      const pend=fila.slice();
+      Promise.allSettled(pend.map(r=>postWebhook(r))).then(res=>{
+        const ok=res.filter(x=>x.status==="fulfilled").length;
+        if(ok>0){ fila=fila.slice(ok); salvarFila();
+          setStatusSync("✔ "+ok+" enviado(s) ao Excel online · "+new Date().toLocaleTimeString("pt-BR"),"#065f46");
+          toastMsg(ok+" lançamento(s) enviados ao Excel."); }
+        else { setStatusSync("⚠ Sem conexão. "+fila.length+" na fila — reenvia sozinho depois.","#991b1b");
+          toastMsg("Sem internet agora: salvo na fila, reenvia automático."); }
+        enviando=false;
+        if(fila.length&&ok>0) flushFila();
+      });
+    }
+    function testarConexao(){
+      if(!WEBHOOK_URL.trim()){toastMsg("Nenhuma URL do Power Automate configurada.");return;}
+      setStatusSync("Testando conexão com o Power Automate...","#92400e");
+      const ping={text:"PING de teste do site",data:new Date().toISOString(),dataBR:new Date().toLocaleString("pt-BR"),operador:operador||"Teste",codigo:"000",descricao:"Teste de conexão",tipo:"Entrada",qtd:0};
+      postWebhook(ping).then(()=>{setStatusSync("✔ Requisição enviada ao Power Automate. Confira a aba CONTROLE DE ESTOQUE / histórico do fluxo.","#065f46");toastMsg("Teste enviado! Veja se chegou uma linha 000 no Excel.");})
+        .catch(()=>{setStatusSync("⚠ Falha de rede ao chamar o Power Automate.","#991b1b");toastMsg("Falhou: sem rede ou URL inválida.");});
     }
 
     function renderRecentes(){
@@ -311,20 +346,27 @@
       $("totalSai").textContent=mov.filter(m=>m.tipo==="Saída").length;
     }
 
+    const STMAP={ok:["st-ok","🟢 OK","row-ok"],pedir:["st-pedir","🟡 PEDIR AGORA","row-pedir"],crit:["st-crit","🔴 CRÍTICO","row-crit"]};
     function renderControle(){
       $("corpoControle").innerHTML = ITEMS.map((it,idx)=>{
-        const s=it.entrada-it.saida, st=statusOf(it);
-        const map={ok:["st-ok","🟢 OK","row-ok"],pedir:["st-pedir","🟡 PEDIR AGORA","row-pedir"],crit:["st-crit","🔴 CRÍTICO","row-crit"]};
-        const [cls,txt,rcl]=map[st];
-        return `<tr class="${rcl}"><td><strong>${it.cod}</strong></td><td>${esc(it.desc)}</td>
+        const s=it.entrada-it.saida, st=statusOf(it), [cls,txt,rcl]=STMAP[st];
+        return `<tr id="r-${idx}" class="${rcl}"><td><strong>${it.cod}</strong></td><td>${esc(it.desc)}</td>
           <td><input type="number" min="0" value="${it.entrada}" oninput="editCtrl(${idx},'entrada',this.value)"></td>
           <td><input type="number" min="0" value="${it.saida}" oninput="editCtrl(${idx},'saida',this.value)"></td>
-          <td><strong>${nf(s)}</strong></td><td>${nf(it.ES)}</td><td>${nf(it.PP)}</td>
-          <td><span class="tag ${cls}">${txt}</span></td></tr>`;
+          <td id="sld-${idx}"><strong>${nf(s)}</strong></td><td>${nf(it.ES)}</td><td>${nf(it.PP)}</td>
+          <td id="sts-${idx}"><span class="tag ${cls}">${txt}</span></td></tr>`;
       }).join("");
       $("totalCrit").textContent=ITEMS.filter(i=>statusOf(i)==="crit").length;
     }
-    function editCtrl(idx,campo,val){ITEMS[idx][campo]=Math.max(0,Number(val)||0);salvar();renderControle();renderDash()}
+    function editCtrl(idx,campo,val){
+      ITEMS[idx][campo]=Math.max(0,Number(val)||0);
+      const it=ITEMS[idx], s=it.entrada-it.saida, st=statusOf(it), [cls,txt,rcl]=STMAP[st];
+      const row=$("r-"+idx); if(row)row.className=rcl;
+      const sld=$("sld-"+idx); if(sld)sld.innerHTML=`<strong>${nf(s)}</strong>`;
+      const sts=$("sts-"+idx); if(sts)sts.innerHTML=`<span class="tag ${cls}">${txt}</span>`;
+      $("totalCrit").textContent=ITEMS.filter(i=>statusOf(i)==="crit").length;
+      salvar(); renderDash();
+    }
 
     function renderDash(){
       const ok=ITEMS.filter(i=>statusOf(i)==="ok").length;
@@ -438,7 +480,7 @@
     }
 
     window.addEventListener("load",()=>{
-      carregar();preencherSelect();renderExercicios();renderTudo();
+      carregar();carregarFila();preencherSelect();renderExercicios();renderTudo();flushFila();
       if(operador){$("nomeUsuario").value=operador;}
       $("nomeUsuario").addEventListener("keydown",e=>{if(e.key==="Enter")entrar()});
     });
