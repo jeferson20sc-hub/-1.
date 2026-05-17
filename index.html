@@ -205,6 +205,11 @@
               <tbody id="corpoResumo"></tbody>
             </table>
           </div>
+          <div class="grafico-box" style="margin-top:16px">
+            <h4>📦 Pareto de saídas — concentração do consumo (regra 80/20)</h4>
+            <p>Barras = saídas por item (maior → menor) · linha vermelha = % acumulado · linha tracejada = 80%. Atualiza com os lançamentos.</p>
+            <canvas id="cvPareto" width="900" height="340"></canvas>
+          </div>
         </div>
       </div>
 
@@ -238,8 +243,10 @@
        Deixe "" para funcionar 100% local. Se o professor criar um webhook grátis
        (Power Automate "When a HTTP request is received" OU Google Apps Script),
        cole a URL aqui que cada lançamento é enviado para o Excel online.
-       Passo a passo em COMO-CONECTAR-EXCEL-ONLINE.md  (NÃO coloque senhas aqui). */
-    const WEBHOOK_URL = "";
+       Passo a passo em COMO-CONECTAR-EXCEL-ONLINE.md  (NÃO coloque senhas aqui).
+       Site publicado: https://jeferson20sc-hub.github.io/senai-cba/ */
+    const SITE_URL = "https://jeferson20sc-hub.github.io/senai-cba/";
+    const WEBHOOK_URL = "https://defaultb1051c4b3b9441ab9441e73a72342f.dd.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/08d590568ed84d34aa474d10a3a0683a/triggers/manual/paths/invoke?api-version=1";
 
     const ITEMS = [
       {cod:"001",desc:"Filtro de óleo (loja de peças)",cen:"Loja de peças automotivas",c:"20 un/dia",tr:"5 dias",kes:"ES = 40 un (dado)",C:20,TR:5,ES:40,PP:140,entrada:500,saida:380,mem:"PP = (C×TR) + ES = (20×5) + 40 = 100 + 40 = 140 unidades"},
@@ -269,7 +276,7 @@
     function abrirPainel(){$("nomeTela").textContent=operador;$("login").style.opacity="0";$("login").style.transition=".35s";setTimeout(()=>{$("login").style.display="none";$("dashboard").style.display="block";salvar();toastMsg("Bem-vindo, "+operador+"!")},300)}
     function sair(){salvar();location.reload()}
 
-    function showTab(t){abaAtual=t;["lanc","ctrl","dash","exer"].forEach(k=>{$("pane-"+k).classList.toggle("hide",k!==t);$("tb-"+k).classList.toggle("ativo",k===t)});if(t==="exer")desenharGraficos()}
+    function showTab(t){abaAtual=t;["lanc","ctrl","dash","exer"].forEach(k=>{$("pane-"+k).classList.toggle("hide",k!==t);$("tb-"+k).classList.toggle("ativo",k===t)});if(t==="exer")desenharGraficos();if(t==="dash")desenharPareto()}
 
     function preencherSelect(){const s=$("codItem");s.innerHTML='<option value="">Selecione o item...</option>'+ITEMS.map(i=>`<option value="${i.cod}">${i.cod} · ${esc(i.desc)}</option>`).join("")}
 
@@ -278,7 +285,8 @@
       if(!cod||!t||!q||q<=0){toastMsg("Escolha o item, o tipo e a quantidade.");return}
       const it=ITEMS.find(i=>i.cod===cod);
       if(t==="Entrada")it.entrada+=q; else it.saida+=q;
-      const reg={data:new Date().toLocaleString("pt-BR"),operador,codigo:cod,descricao:it.desc,tipo:t,qtd:q};
+      const dataHora=new Date().toLocaleString("pt-BR");
+      const reg={text:t+" de "+q+" — "+cod+" "+it.desc+" (op: "+operador+")",data:dataHora,operador,codigo:cod,descricao:it.desc,tipo:t,qtd:q};
       mov.unshift(reg);
       $("tipoMovimento").value="";$("qtdItem").value="";
       salvar();renderTudo();
@@ -290,8 +298,7 @@
 
     function enviarWebhook(reg){
       if(!WEBHOOK_URL || !WEBHOOK_URL.trim()) return;
-      try{fetch(WEBHOOK_URL,{method:"POST",mode:"no-cors",headers:{"Content-Type":"application/json"},body:JSON.stringify(reg)});
-        toastMsg("Enviado para o Excel online.");}catch(e){}
+      try{fetch(WEBHOOK_URL,{method:"POST",mode:"no-cors",headers:{"Content-Type":"application/json"},body:JSON.stringify(reg)}).then(()=>toastMsg("Enviado para o Excel online.")).catch(()=>toastMsg("Sem internet: salvo local, será reenviado depois."));}catch(e){}
     }
 
     function renderRecentes(){
@@ -331,6 +338,7 @@
         const pct=it.PP?Math.round(s/it.PP*100):0, xes=it.ES?(s/it.ES).toFixed(2):"-";
         return `<tr class="${rcl}"><td><strong>${it.cod}</strong></td><td>${esc(it.desc)}</td><td><strong>${nf(s)}</strong></td><td>${nf(it.ES)}</td><td>${nf(it.PP)}</td><td>${pct}%</td><td>${xes}×</td><td><span class="tag ${cls}">${txt}</span></td></tr>`;
       }).join("");
+      desenharPareto();
     }
 
     function renderExercicios(){
@@ -343,6 +351,29 @@
       const S0=PP+C*TR; let v=S0, pts=[S0], g=0;
       while(g++<80){ v-=C; if(v<=ES){pts.push(ES);pts.push(S0);v=S0;} else pts.push(v); if(pts.length>=22)break; }
       return {pts,S0};
+    }
+    function desenharPareto(){
+      const cv=$("cvPareto"); if(!cv) return;
+      const arr=ITEMS.map(i=>({cod:i.cod,v:Math.max(0,i.saida)})).sort((a,b)=>b.v-a.v);
+      const tot=arr.reduce((a,x)=>a+x.v,0)||1; let ac=0;
+      const cum=arr.map(x=>{ac+=x.v;return ac/tot*100});
+      const ctx=cv.getContext("2d"),w=cv.width,h=cv.height,mL=58,mR=54,mT=34,mB=58;
+      const mx=arr.length?arr[0].v:1,n=arr.length,bw=(w-mL-mR)/n*0.6;
+      const bx=i=>mL+(i+0.5)*((w-mL-mR)/n),byV=v=>h-mB-(v/mx)*(h-mT-mB),byP=p=>h-mB-(p/100)*(h-mT-mB);
+      ctx.clearRect(0,0,w,h);ctx.fillStyle="#fff";ctx.fillRect(0,0,w,h);
+      ctx.strokeStyle="#e5e7eb";ctx.lineWidth=1;
+      for(let i=0;i<=4;i++){const y=mT+i*((h-mT-mB)/4);ctx.beginPath();ctx.moveTo(mL,y);ctx.lineTo(w-mR,y);ctx.stroke();}
+      arr.forEach((x,i)=>{const c=bx(i);ctx.fillStyle=x.v<=0?"#cbd5e1":"#00529b";ctx.fillRect(c-bw/2,byV(x.v),bw,h-mB-byV(x.v));
+        ctx.fillStyle="#1f2937";ctx.font="bold 11px Arial";ctx.textAlign="center";ctx.fillText(nf(x.v),c,byV(x.v)-5);
+        ctx.fillStyle="#6b7280";ctx.font="10px Arial";ctx.fillText(x.cod,c,h-mB+15);});
+      ctx.strokeStyle="#d97706";ctx.setLineDash([7,6]);ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(mL,byP(80));ctx.lineTo(w-mR,byP(80));ctx.stroke();ctx.setLineDash([]);
+      ctx.fillStyle="#d97706";ctx.font="bold 11px Arial";ctx.textAlign="left";ctx.fillText("80%",w-mR+4,byP(80)+4);
+      ctx.strokeStyle="#e3000f";ctx.lineWidth=3;ctx.beginPath();
+      cum.forEach((p,i)=>i?ctx.lineTo(bx(i),byP(p)):ctx.moveTo(bx(i),byP(p)));ctx.stroke();
+      cum.forEach((p,i)=>{ctx.fillStyle="#e3000f";ctx.beginPath();ctx.arc(bx(i),byP(p),4,0,Math.PI*2);ctx.fill();
+        ctx.fillStyle="#991b1b";ctx.font="bold 10px Arial";ctx.textAlign="center";ctx.fillText(Math.round(p)+"%",bx(i),byP(p)-9);});
+      ctx.fillStyle="#00529b";ctx.font="bold 14px Arial";ctx.textAlign="left";
+      ctx.fillText("Pareto de saídas (80/20)",mL,20);ctx.textAlign="left";
     }
     function desenharGraficos(){
       ITEMS.forEach(it=>{
