@@ -239,14 +239,25 @@
        1. Acesse flow.microsoft.com e crie um novo fluxo automatizado
        2. Gatilho: "Quando uma solicitação HTTP é recebida"
        3. Cole este schema JSON no campo "Esquema JSON do Corpo da Solicitação":
-          {"type":"object","properties":{"data":{"type":"string"},"operador":{"type":"string"},"codigo":{"type":"string"},"descricao":{"type":"string"},"tipo":{"type":"string"},"qtd":{"type":"number"}}}
+          {"type":"object","properties":{"data":{"type":"string"},"operador":{"type":"string"},"codigo":{"type":"string"},"descricao":{"type":"string"},"tipo":{"type":"string"},"qtd":{"type":"number"},"entrada":{"type":"number"},"saida":{"type":"number"},"saldo":{"type":"number"},"ES":{"type":"number"},"PP":{"type":"number"},"status":{"type":"string"}}}
        4. Adicione a ação: Excel Online (Business) → "Adicionar uma linha em uma tabela"
-       5. Selecione o arquivo Gestao_Estoque_LIS.xlsx no OneDrive
-       6. Mapeie as colunas: Data→data, Operador→operador, Código→codigo, Descrição→descricao, Tipo→tipo, Quantidade→qtd
+       5. Selecione o arquivo Gestao_Estoque_LIS.xlsx no OneDrive e a tabela desejada
+       6. Mapeie as colunas da tabela (use os campos do conteúdo dinâmico do gatilho):
+             DATA/HORA              → data
+             OPERADOR               → operador
+             CÓDIGO                 → codigo
+             DESCRIÇÃO DO ITEM      → descricao
+             ENTRADA                → entrada
+             SAÍDA                  → saida
+             QTD/SALDO              → saldo
+             ESTOQUE DE SEGURANÇA   → ES
+             PONTO DE PEDIDO (PP)   → PP
+             STATUS                 → status
        7. Salve o fluxo e copie a URL gerada pelo gatilho HTTP
        8. Cole a URL abaixo entre as aspas
 
-       A tabela no Excel DEVE ter as colunas: Data | Operador | Código | Descrição | Tipo | Quantidade
+       IMPORTANTE: A coluna DATA/HORA deve ser do tipo "Texto" no Excel
+       para receber o formato brasileiro (ex: 18/05/2026, 14:30:00).
        (NÃO coloque senhas aqui — o arquivo fica público no GitHub) */
     const WEBHOOK_URL = "";
 
@@ -287,7 +298,8 @@
       if(!cod||!t||!q||q<=0){toastMsg("Escolha o item, o tipo e a quantidade.");return}
       const it=ITEMS.find(i=>i.cod===cod);
       if(t==="Entrada")it.entrada+=q; else it.saida+=q;
-      const reg={data:new Date().toLocaleString("pt-BR"),operador,codigo:cod,descricao:it.desc,tipo:t,qtd:q,_sync:WEBHOOK_URL&&WEBHOOK_URL.trim()?"enviando":"local"};
+      const saldo=it.entrada-it.saida, st=statusOf(it);
+      const reg={data:new Date().toLocaleString("pt-BR"),operador,codigo:cod,descricao:it.desc,tipo:t,qtd:q,entrada:it.entrada,saida:it.saida,saldo,ES:it.ES,PP:it.PP,status:st==="ok"?"OK":st==="pedir"?"PEDIR AGORA":"CRÍTICO",_sync:WEBHOOK_URL&&WEBHOOK_URL.trim()?"enviando":"local"};
       mov.unshift(reg);
       $("tipoMovimento").value="";$("qtdItem").value="";
       salvar();renderTudo();
@@ -300,7 +312,8 @@
     async function enviarWebhook(reg){
       if(!WEBHOOK_URL || !WEBHOOK_URL.trim()) return;
       try{
-        const r=await fetch(WEBHOOK_URL,{method:"POST",mode:"cors",headers:{"Content-Type":"application/json"},body:JSON.stringify({data:reg.data,operador:reg.operador,codigo:reg.codigo,descricao:reg.descricao,tipo:reg.tipo,qtd:reg.qtd})});
+        const payload={data:reg.data,operador:reg.operador,codigo:reg.codigo,descricao:reg.descricao,tipo:reg.tipo,qtd:reg.qtd,entrada:reg.entrada,saida:reg.saida,saldo:reg.saldo,ES:reg.ES,PP:reg.PP,status:reg.status};
+        const r=await fetch(WEBHOOK_URL,{method:"POST",mode:"cors",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
         reg._sync=r.ok?"ok":"erro";
         salvar();renderRecentes();
         toastMsg(r.ok?"✔ Salvo no Excel online!":"Erro ao salvar no Excel (status "+r.status+").");
