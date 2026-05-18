@@ -234,11 +234,20 @@
   <div id="toast" class="toast">Mensagem</div>
 
   <script>
-    /* ===== CONEXÃO OPCIONAL COM EXCEL ONLINE (grátis, desligada por padrão) =====
-       Deixe "" para funcionar 100% local. Se o professor criar um webhook grátis
-       (Power Automate "When a HTTP request is received" OU Google Apps Script),
-       cole a URL aqui que cada lançamento é enviado para o Excel online.
-       Passo a passo em COMO-CONECTAR-EXCEL-ONLINE.md  (NÃO coloque senhas aqui). */
+    /* ===== CONEXÃO COM EXCEL ONLINE VIA POWER AUTOMATE =====
+       PASSO A PASSO:
+       1. Acesse flow.microsoft.com e crie um novo fluxo automatizado
+       2. Gatilho: "Quando uma solicitação HTTP é recebida"
+       3. Cole este schema JSON no campo "Esquema JSON do Corpo da Solicitação":
+          {"type":"object","properties":{"data":{"type":"string"},"operador":{"type":"string"},"codigo":{"type":"string"},"descricao":{"type":"string"},"tipo":{"type":"string"},"qtd":{"type":"number"}}}
+       4. Adicione a ação: Excel Online (Business) → "Adicionar uma linha em uma tabela"
+       5. Selecione o arquivo Gestao_Estoque_LIS.xlsx no OneDrive
+       6. Mapeie as colunas: Data→data, Operador→operador, Código→codigo, Descrição→descricao, Tipo→tipo, Quantidade→qtd
+       7. Salve o fluxo e copie a URL gerada pelo gatilho HTTP
+       8. Cole a URL abaixo entre as aspas
+
+       A tabela no Excel DEVE ter as colunas: Data | Operador | Código | Descrição | Tipo | Quantidade
+       (NÃO coloque senhas aqui — o arquivo fica público no GitHub) */
     const WEBHOOK_URL = "";
 
     const ITEMS = [
@@ -278,7 +287,7 @@
       if(!cod||!t||!q||q<=0){toastMsg("Escolha o item, o tipo e a quantidade.");return}
       const it=ITEMS.find(i=>i.cod===cod);
       if(t==="Entrada")it.entrada+=q; else it.saida+=q;
-      const reg={data:new Date().toLocaleString("pt-BR"),operador,codigo:cod,descricao:it.desc,tipo:t,qtd:q};
+      const reg={data:new Date().toLocaleString("pt-BR"),operador,codigo:cod,descricao:it.desc,tipo:t,qtd:q,_sync:WEBHOOK_URL&&WEBHOOK_URL.trim()?"enviando":"local"};
       mov.unshift(reg);
       $("tipoMovimento").value="";$("qtdItem").value="";
       salvar();renderTudo();
@@ -288,16 +297,25 @@
       toastMsg(t+" de "+nf(q)+" em "+it.cod+" registrada.");
     }
 
-    function enviarWebhook(reg){
+    async function enviarWebhook(reg){
       if(!WEBHOOK_URL || !WEBHOOK_URL.trim()) return;
-      try{fetch(WEBHOOK_URL,{method:"POST",mode:"no-cors",headers:{"Content-Type":"application/json"},body:JSON.stringify(reg)});
-        toastMsg("Enviado para o Excel online.");}catch(e){}
+      try{
+        const r=await fetch(WEBHOOK_URL,{method:"POST",mode:"cors",headers:{"Content-Type":"application/json"},body:JSON.stringify({data:reg.data,operador:reg.operador,codigo:reg.codigo,descricao:reg.descricao,tipo:reg.tipo,qtd:reg.qtd})});
+        reg._sync=r.ok?"ok":"erro";
+        salvar();renderRecentes();
+        toastMsg(r.ok?"✔ Salvo no Excel online!":"Erro ao salvar no Excel (status "+r.status+").");
+      }catch(e){
+        reg._sync="erro";
+        salvar();renderRecentes();
+        toastMsg("Erro de conexão com o Excel online. Verifique a URL do Power Automate.");
+      }
     }
 
     function renderRecentes(){
       $("corpoTabela").innerHTML = mov.length? mov.slice(0,40).map(i=>{
         const cl=i.tipo==="Entrada"?"entrada":"saida", ic=i.tipo==="Entrada"?"⬆":"⬇";
-        return `<tr><td>${esc(i.data)}</td><td>${esc(i.operador)}</td><td><strong>${esc(i.codigo)}</strong></td><td>${esc(i.descricao)}</td><td><span class="tag ${cl}">${ic} ${i.tipo}</span></td><td><strong>${nf(i.qtd)}</strong></td><td><span class="tag ok">✔ Salvo</span></td></tr>`;
+        const syncTag=i._sync==="ok"?'<span class="tag ok">✔ Excel</span>':i._sync==="enviando"?'<span class="tag enviando">⏳ Enviando</span>':i._sync==="erro"?'<span class="tag erro">❌ Erro</span>':'<span class="tag ok">✔ Local</span>';
+        return `<tr><td>${esc(i.data)}</td><td>${esc(i.operador)}</td><td><strong>${esc(i.codigo)}</strong></td><td>${esc(i.descricao)}</td><td><span class="tag ${cl}">${ic} ${i.tipo}</span></td><td><strong>${nf(i.qtd)}</strong></td><td>${syncTag}</td></tr>`;
       }).join("") : `<tr><td colspan="7" style="text-align:center;color:var(--cinza)">Nenhum lançamento ainda.</td></tr>`;
       $("totalMov").textContent=mov.length;
       $("totalEnt").textContent=mov.filter(m=>m.tipo==="Entrada").length;
