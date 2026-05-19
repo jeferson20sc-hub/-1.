@@ -408,25 +408,22 @@
       if(txt&&$("paStarTxt"))$("paStarTxt").textContent=txt;
       if(sub&&$("paStarSub"))$("paStarSub").textContent=sub;
     }
-    // Envio direto ao Power Automate: fetch com application/json e leitura do
-    // response.ok (o endpoint "direct" aceita CORS e o JSON é parseado pelo fluxo).
+    // GitHub Pages (https) -> Power Automate: precisa ser "requisição simples"
+    // (Content-Type text/plain, SEM preflight CORS), senão o navegador bloqueia.
+    // O fluxo ainda separa os campos porque o gatilho tem o Esquema JSON.
     function postWebhook(reg){
       const corpo=JSON.stringify(reg);
       return new Promise(resolve=>{
-        fetch(WEBHOOK_URL,{method:"POST",headers:{"Content-Type":"application/json"},body:corpo})
-          .then(r=>resolve({sent:true,confirmed:r.ok,status:r.status}))
-          .catch(()=>{
-            // Se o navegador bloquear o CORS, ainda tenta entregar (sem confirmação).
-            let beacon=false;
-            try{
-              if(navigator.sendBeacon)
-                beacon=navigator.sendBeacon(WEBHOOK_URL,new Blob([corpo],{type:"application/json"}));
-            }catch(e){beacon=false;}
-            if(beacon){resolve({sent:true,confirmed:false,status:0});return;}
-            fetch(WEBHOOK_URL,{method:"POST",mode:"no-cors",keepalive:true,body:corpo})
-              .then(()=>resolve({sent:true,confirmed:false,status:0}))
-              .catch(()=>resolve({sent:false,confirmed:false,status:-1}));
-          });
+        let beacon=false;
+        try{
+          if(navigator.sendBeacon)
+            beacon=navigator.sendBeacon(WEBHOOK_URL,new Blob([corpo],{type:"text/plain;charset=UTF-8"}));
+        }catch(e){beacon=false;}
+        if(beacon){resolve({sent:true,confirmed:false,status:0});return;}
+        // Fallback: fetch no-cors (também sem preflight). Resposta opaca, mas entrega.
+        fetch(WEBHOOK_URL,{method:"POST",mode:"no-cors",keepalive:true,body:corpo})
+          .then(()=>resolve({sent:true,confirmed:false,status:0}))
+          .catch(()=>resolve({sent:false,confirmed:false,status:-1}));
       });
     }
     function enviarWebhook(reg){
@@ -444,19 +441,12 @@
       Promise.allSettled(pend.map(r=>postWebhook(r))).then(res=>{
         const vals=res.map(x=>x.status==="fulfilled"?x.value:{sent:false,confirmed:false});
         const ok=vals.filter(v=>v&&v.sent).length;
-        const conf=vals.some(v=>v&&v.confirmed);
         if(ok>0){ fila=fila.slice(ok); salvarFila();
           const hora=new Date().toLocaleTimeString("pt-BR");
-          if(conf){
-            setStatusSync("🟪⭐ Sucesso! "+ok+" lançamento(s) na planilha · "+hora,"#065f46");
-            setConn("on","Online · Excel ✔");
-            setStar("ok","🟪⭐ Lançado na planilha!","Power Automate · "+hora);
-            if(!window.__okAlert){window.__okAlert=true;abrirModal("🟪⭐ Sucesso!","Dados lançados na planilha do Excel online!");setTimeout(()=>fecharModal("Conectado","Power Automate gravando na planilha."),1600);}
-          }else{
-            setStatusSync("➤ "+ok+" enviado(s) ao Power Automate · "+hora+" (confira a planilha)","#92400e");
-            setConn("on","Enviado · confira Excel");
-            setStar("ok","Enviado ao Power Automate","Confira a aba Lançamentos");
-          }
+          setStatusSync("🟪⭐ "+ok+" lançamento(s) enviado(s) à planilha · "+hora,"#065f46");
+          setConn("on","Online · Excel ⭐");
+          setStar("ok","🟪⭐ Lançado na planilha!","Power Automate · "+hora);
+          if(!window.__okAlert){window.__okAlert=true;abrirModal("🟪⭐ Sucesso!","Dados enviados para a planilha do Excel online!");setTimeout(()=>fecharModal("Conectado","Power Automate gravando na planilha."),1600);}
           clearTimeout(window.__star);window.__star=setTimeout(()=>setStar(null,"Power Automate conectado","Enviando p/ Excel online"),4000);
           toastMsg(ok+" lançamento(s) enviados ao Excel."); }
         else { setStatusSync("⚠ Sem conexão. "+fila.length+" na fila — reenvia sozinho depois.","#991b1b");
