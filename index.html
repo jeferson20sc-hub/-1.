@@ -408,19 +408,19 @@
       if(txt&&$("paStarTxt"))$("paStarTxt").textContent=txt;
       if(sub&&$("paStarSub"))$("paStarSub").textContent=sub;
     }
-    // Envio em camadas. 1) fetch real (application/json) — Power Automate entende
-    // e devolve resposta. 2) Se o navegador bloquear (CORS), cai p/ sendBeacon e
-    // fetch no-cors (chega no fluxo, mas sem confirmação de leitura).
+    // Envio direto ao Power Automate: fetch com application/json e leitura do
+    // response.ok (o endpoint "direct" aceita CORS e o JSON é parseado pelo fluxo).
     function postWebhook(reg){
       const corpo=JSON.stringify(reg);
       return new Promise(resolve=>{
         fetch(WEBHOOK_URL,{method:"POST",headers:{"Content-Type":"application/json"},body:corpo})
           .then(r=>resolve({sent:true,confirmed:r.ok,status:r.status}))
           .catch(()=>{
+            // Se o navegador bloquear o CORS, ainda tenta entregar (sem confirmação).
             let beacon=false;
             try{
               if(navigator.sendBeacon)
-                beacon=navigator.sendBeacon(WEBHOOK_URL,new Blob([corpo],{type:"text/plain;charset=UTF-8"}));
+                beacon=navigator.sendBeacon(WEBHOOK_URL,new Blob([corpo],{type:"application/json"}));
             }catch(e){beacon=false;}
             if(beacon){resolve({sent:true,confirmed:false,status:0});return;}
             fetch(WEBHOOK_URL,{method:"POST",mode:"no-cors",keepalive:true,body:corpo})
@@ -448,9 +448,10 @@
         if(ok>0){ fila=fila.slice(ok); salvarFila();
           const hora=new Date().toLocaleTimeString("pt-BR");
           if(conf){
-            setStatusSync("✔ "+ok+" confirmado(s) no Excel online · "+hora,"#065f46");
+            setStatusSync("🟪⭐ Sucesso! "+ok+" lançamento(s) na planilha · "+hora,"#065f46");
             setConn("on","Online · Excel ✔");
-            setStar("ok","Confirmado no Excel ✔","Power Automate · "+hora);
+            setStar("ok","🟪⭐ Lançado na planilha!","Power Automate · "+hora);
+            if(!window.__okAlert){window.__okAlert=true;abrirModal("🟪⭐ Sucesso!","Dados lançados na planilha do Excel online!");setTimeout(()=>fecharModal("Conectado","Power Automate gravando na planilha."),1600);}
           }else{
             setStatusSync("➤ "+ok+" enviado(s) ao Power Automate · "+hora+" (confira a planilha)","#92400e");
             setConn("on","Enviado · confira Excel");
