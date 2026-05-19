@@ -408,21 +408,25 @@
       if(txt&&$("paStarTxt"))$("paStarTxt").textContent=txt;
       if(sub&&$("paStarSub"))$("paStarSub").textContent=sub;
     }
-    // Envio "fire-and-forget" cross-origin: sendBeacon (mais robusto) e fallback fetch no-cors.
+    // Envio em camadas. 1) fetch real (application/json) — Power Automate entende
+    // e devolve resposta. 2) Se o navegador bloquear (CORS), cai p/ sendBeacon e
+    // fetch no-cors (chega no fluxo, mas sem confirmação de leitura).
     function postWebhook(reg){
       const corpo=JSON.stringify(reg);
       return new Promise(resolve=>{
-        let entregue=false;
-        try{
-          if(navigator.sendBeacon){
-            const blob=new Blob([corpo],{type:"text/plain;charset=UTF-8"});
-            entregue=navigator.sendBeacon(WEBHOOK_URL,blob);
-          }
-        }catch(e){entregue=false;}
-        if(entregue){resolve(true);return;}
-        // Fallback: fetch sem CORS (requisição simples, sem preflight).
-        fetch(WEBHOOK_URL,{method:"POST",mode:"no-cors",keepalive:true,body:corpo})
-          .then(()=>resolve(true)).catch(()=>resolve(false));
+        fetch(WEBHOOK_URL,{method:"POST",headers:{"Content-Type":"application/json"},body:corpo})
+          .then(r=>resolve({sent:true,confirmed:r.ok,status:r.status}))
+          .catch(()=>{
+            let beacon=false;
+            try{
+              if(navigator.sendBeacon)
+                beacon=navigator.sendBeacon(WEBHOOK_URL,new Blob([corpo],{type:"text/plain;charset=UTF-8"}));
+            }catch(e){beacon=false;}
+            if(beacon){resolve({sent:true,confirmed:false,status:0});return;}
+            fetch(WEBHOOK_URL,{method:"POST",mode:"no-cors",keepalive:true,body:corpo})
+              .then(()=>resolve({sent:true,confirmed:false,status:0}))
+              .catch(()=>resolve({sent:false,confirmed:false,status:-1}));
+          });
       });
     }
     function enviarWebhook(reg){
@@ -438,12 +442,20 @@
       const pend=fila.slice();
       setStar("send","Enviando ao Excel...","Power Automate");
       Promise.allSettled(pend.map(r=>postWebhook(r))).then(res=>{
-        const ok=res.filter(x=>x.status==="fulfilled"&&x.value===true).length;
+        const vals=res.map(x=>x.status==="fulfilled"?x.value:{sent:false,confirmed:false});
+        const ok=vals.filter(v=>v&&v.sent).length;
+        const conf=vals.some(v=>v&&v.confirmed);
         if(ok>0){ fila=fila.slice(ok); salvarFila();
           const hora=new Date().toLocaleTimeString("pt-BR");
-          setStatusSync("✔ "+ok+" enviado(s) ao Excel online · "+hora,"#065f46");
-          setConn("on","Online · Excel");
-          setStar("ok","Enviado ao Excel ✔","Power Automate · "+hora);
+          if(conf){
+            setStatusSync("✔ "+ok+" confirmado(s) no Excel online · "+hora,"#065f46");
+            setConn("on","Online · Excel ✔");
+            setStar("ok","Confirmado no Excel ✔","Power Automate · "+hora);
+          }else{
+            setStatusSync("➤ "+ok+" enviado(s) ao Power Automate · "+hora+" (confira a planilha)","#92400e");
+            setConn("on","Enviado · confira Excel");
+            setStar("ok","Enviado ao Power Automate","Confira a aba Lançamentos");
+          }
           clearTimeout(window.__star);window.__star=setTimeout(()=>setStar(null,"Power Automate conectado","Enviando p/ Excel online"),4000);
           toastMsg(ok+" lançamento(s) enviados ao Excel."); }
         else { setStatusSync("⚠ Sem conexão. "+fila.length+" na fila — reenvia sozinho depois.","#991b1b");
@@ -460,8 +472,9 @@
       setStar("send","Testando conexão...","Power Automate");
       const ag=new Date();
       const ping={id:"LIS-TESTE-"+ag.getTime(),text:"PING de teste do site",data:ag.toISOString(),dataBR:ag.toLocaleString("pt-BR"),operador:operador||"Teste",codigo:"000",descricao:"Teste de conexão",tipo:"Entrada",qtd:0,saldo:0,estoqueSeg:0,pontoPedido:0,status:"🟢 OK",origem:"Teste",site:SITE_URL};
-      postWebhook(ping).then(ok=>{
-        if(ok){setStatusSync("✔ Requisição enviada ao Power Automate. Confira a aba Lançamentos da planilha no OneDrive.","#065f46");setConn("on","Online · Excel");setStar("ok","Teste enviado ✔","Veja a linha 000 no Excel");clearTimeout(window.__star);window.__star=setTimeout(()=>setStar(null,"Power Automate conectado","Enviando p/ Excel online"),5000);toastMsg("Teste enviado! Veja se chegou uma linha 000 no Excel.");}
+      postWebhook(ping).then(r=>{
+        if(r&&r.confirmed){setStatusSync("✔ Power Automate respondeu OK (HTTP "+r.status+"). A linha 000 deve estar na aba Lançamentos.","#065f46");setConn("on","Online · Excel ✔");setStar("ok","Conexão confirmada ✔","HTTP "+r.status+" · veja a linha 000");clearTimeout(window.__star);window.__star=setTimeout(()=>setStar(null,"Power Automate conectado","Enviando p/ Excel online"),6000);toastMsg("Conexão OK! Veja a linha 000 no Excel.");}
+        else if(r&&r.sent){setStatusSync("➤ Requisição enviada (sem confirmação do navegador). Se a linha 000 NÃO aparecer, o ajuste é no fluxo do Power Automate.","#92400e");setConn("on","Enviado · confira Excel");setStar("ok","Teste enviado","Confira a linha 000 no Excel");clearTimeout(window.__star);window.__star=setTimeout(()=>setStar(null,"Power Automate conectado","Enviando p/ Excel online"),6000);toastMsg("Teste enviado. Confira a linha 000 no Excel.");}
         else{setStatusSync("⚠ Falha de rede ao chamar o Power Automate.","#991b1b");setConn("err","Sem conexão");setStar(null,"Power Automate conectado","Falha de rede no teste");toastMsg("Falhou: sem rede ou URL inválida.");}
       });
     }
