@@ -158,7 +158,7 @@
       <input id="nomeUsuario" type="text" placeholder="Ex: Jeferson" autocomplete="off" />
       <button class="btn btn-principal" onclick="entrar()">Entrar no painel</button>
       <div class="aviso">Funciona 100% no navegador (PC e celular). Os lançamentos ficam salvos neste aparelho e podem ser exportados para Excel.</div>
-      <div style="margin-top:10px;font-size:12px;font-weight:900;color:var(--verde);background:rgba(16,124,65,.1);border:1px solid rgba(16,124,65,.3);padding:7px 10px;border-radius:999px">✅ Versão online v2 — envio direto ao Excel ativo</div>
+      <div style="margin-top:10px;font-size:12px;font-weight:900;color:var(--verde);background:rgba(16,124,65,.1);border:1px solid rgba(16,124,65,.3);padding:7px 10px;border-radius:999px">✅ Versão online v3 — envio JSON direto ao Excel</div>
     </div>
   </section>
 
@@ -409,21 +409,14 @@
       if(txt&&$("paStarTxt"))$("paStarTxt").textContent=txt;
       if(sub&&$("paStarSub"))$("paStarSub").textContent=sub;
     }
-    // GitHub Pages (https) -> Power Automate: precisa ser "requisição simples"
-    // (Content-Type text/plain, SEM preflight CORS), senão o navegador bloqueia.
-    // O fluxo ainda separa os campos porque o gatilho tem o Esquema JSON.
+    // fetch com application/json: o Power Automate separa os campos (codigo, qtd...)
+    // e devolve resposta. Os endpoints novos "direct" do Power Automate aceitam CORS,
+    // então funciona tanto local quanto no GitHub Pages (https).
     function postWebhook(reg){
       const corpo=JSON.stringify(reg);
       return new Promise(resolve=>{
-        let beacon=false;
-        try{
-          if(navigator.sendBeacon)
-            beacon=navigator.sendBeacon(WEBHOOK_URL,new Blob([corpo],{type:"text/plain;charset=UTF-8"}));
-        }catch(e){beacon=false;}
-        if(beacon){resolve({sent:true,confirmed:false,status:0});return;}
-        // Fallback: fetch no-cors (também sem preflight). Resposta opaca, mas entrega.
-        fetch(WEBHOOK_URL,{method:"POST",mode:"no-cors",keepalive:true,body:corpo})
-          .then(()=>resolve({sent:true,confirmed:false,status:0}))
+        fetch(WEBHOOK_URL,{method:"POST",headers:{"Content-Type":"application/json"},body:corpo})
+          .then(r=>resolve({sent:true,confirmed:r.ok,status:r.status}))
           .catch(()=>resolve({sent:false,confirmed:false,status:-1}));
       });
     }
