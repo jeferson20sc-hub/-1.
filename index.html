@@ -235,7 +235,7 @@
         <button class="tab" id="tb-ctrl" onclick="showTab('ctrl')">📋 Planilha de Controle</button>
         <button class="tab" id="tb-dash" onclick="showTab('dash')">📊 Dashboard</button>
         <button class="tab" id="tb-usu" onclick="showTab('usu')">👥 Usuários</button>
-        <button class="tab" id="tb-exer" onclick="showTab('exer')">🎓 Exercícios + Gráficos</button>
+        <button class="tab hide" id="tb-exer" onclick="showTab('exer')">🎓 Exercícios + Gráficos</button>
       </nav>
 
       <!-- LANÇAMENTOS -->
@@ -443,17 +443,19 @@
     const WEBHOOK_URL = "https://defaultb1051c4b3b9441ab9441e73a72342f.dd.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/f0fb4c41db17426fb618e611b457a082/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=kH2rfMmRKW-qQ2O5kom8B3S8anA_PiuCug1DvE-hbzU";
 
     const ITEMS = [
-      {cod:"001",desc:"Filtro de óleo (loja de peças)",cen:"Loja de peças automotivas",c:"20 un/dia",tr:"5 dias",kes:"ES = 40 un (dado)",C:20,TR:5,ES:40,PP:140,entrada:500,saida:380,mem:"PP = (C×TR) + ES = (20×5) + 40 = 100 + 40 = 140 unidades"},
-      {cod:"002",desc:"Arroz (restaurante)",cen:"Restaurante",c:"15 kg/dia",tr:"3 dias",kes:"ES = 10 kg (dado)",C:15,TR:3,ES:10,PP:55,entrada:200,saida:130,mem:"PP = (15×3) + 10 = 45 + 10 = 55 kg"},
-      {cod:"003",desc:"Chapas de MDF (fábrica de móveis)",cen:"Fábrica de móveis",c:"50 chapas/dia",tr:"4 dias",kes:"K = 200% (2,0)",C:50,TR:4,ES:100,PP:300,entrada:600,saida:350,mem:"ES = 50×2,0 = 100 | PP = (50×4) + 100 = 200 + 100 = 300 chapas"},
-      {cod:"004",desc:"Polivitamínico (farmácia)",cen:"Farmácia",c:"10 un/dia",tr:"7 dias",kes:"K = 300% (3,0)",C:10,TR:7,ES:30,PP:100,entrada:300,saida:220,mem:"ES = 10×3,0 = 30 | PP = (10×7) + 30 = 70 + 30 = 100 unidades"},
-      {cod:"005",desc:"Resmas de papel A4 (papelaria)",cen:"Papelaria",c:"100 resmas/sem",tr:"2 semanas",kes:"K = 150% (1,5)",C:100,TR:2,ES:150,PP:350,entrada:800,saida:500,mem:"ES = 100×1,5 = 150 | PP = (100×2) + 150 = 200 + 150 = 350 resmas"},
-      {cod:"006",desc:"Essência cosmética (cosméticos)",cen:"Indústria de cosméticos",c:"≈6,67 L/dia (200 L/mês)",tr:"15 dias",kes:"K = 25% (mensal)",C:6.67,TR:15,ES:50,PP:150,entrada:400,saida:280,mem:"C médio = (180+210+210)/3 = 200 L/mês ≈ 6,67/dia | ES = 200×0,25 = 50 L | PP ≈ 150 L"},
-      {cod:"007",desc:"Componente crítico (DEVE PEDIR)",cen:"Gestão de peças críticas",c:"30 un/dia (méd seg/ter/qua)",tr:"10 dias",kes:"K = 500% (5,0)",C:30,TR:10,ES:150,PP:450,entrada:1000,saida:600,mem:"C = (25+35+30)/3 = 30 | ES = 30×5 = 150 | PP = (30×10)+150 = 450 | saldo 400 < 450 → PEDIR JÁ"},
-      {cod:"008",desc:"Laptops (varejo eletrônicos)",cen:"Varejo de eletrônicos",c:"5 un/dia (150/mês)",tr:"30 dias",kes:"K = 1000% (10,0)",C:5,TR:30,ES:50,PP:200,entrada:400,saida:170,mem:"C = (140+160+150)/3 = 150/mês → 5/dia | ES = 5×10 = 50 | PP = (5×30)+50 = 200 unidades"},
-      {cod:"009",desc:"Kits de luvas hospitalar (NR-32)",cen:"Hospitalar — NR-32",c:"500 kits/dia (15.000/mês)",tr:"10 dias",kes:"K = 400% (4,0)",C:500,TR:10,ES:2000,PP:7000,entrada:20000,saida:13000,mem:"C = (14.000+16.000+15.000)/3 = 15.000/mês → 500/dia | ES = 500×4 = 2.000 | PP = (500×10)+2.000 = 7.000 kits"},
-      {cod:"010",desc:"Insumo industrial",cen:"Insumos industriais",c:"40 un/dia (1.200/mês)",tr:"10 dias",kes:"K = 500% (5,0)",C:40,TR:10,ES:200,PP:600,entrada:1500,saida:900,mem:"C = (1.100+1.300+1.200)/3 = 1.200/mês → 40/dia | ES = 40×5 = 200 | PP = (40×10)+200 = 600 unidades"}
+      {cod:"001",desc:"Filtro de óleo (loja de peças)",cen:"Loja de peças automotivas",c:"20 un/dia",tr:"5 dias",kes:"ES = 40 un (dado)",C:20,TR:5,ES:40,PP:140,entrada:0,saida:0,mem:"PP = (C×TR) + ES = (20×5) + 40 = 100 + 40 = 140 unidades"},
+      {cod:"002",desc:"Arroz (restaurante)",cen:"Restaurante",c:"15 kg/dia",tr:"3 dias",kes:"ES = 10 kg (dado)",C:15,TR:3,ES:10,PP:55,entrada:0,saida:0,mem:"PP = (15×3) + 10 = 45 + 10 = 55 kg"},
+      {cod:"003",desc:"Chapas de MDF (fábrica de móveis)",cen:"Fábrica de móveis",c:"50 chapas/dia",tr:"4 dias",kes:"K = 200% (2,0)",C:50,TR:4,ES:100,PP:300,entrada:0,saida:0,mem:"ES = 50×2,0 = 100 | PP = (50×4) + 100 = 200 + 100 = 300 chapas"},
+      {cod:"004",desc:"Polivitamínico (farmácia)",cen:"Farmácia",c:"10 un/dia",tr:"7 dias",kes:"K = 300% (3,0)",C:10,TR:7,ES:30,PP:100,entrada:0,saida:0,mem:"ES = 10×3,0 = 30 | PP = (10×7) + 30 = 70 + 30 = 100 unidades"},
+      {cod:"005",desc:"Resmas de papel A4 (papelaria)",cen:"Papelaria",c:"100 resmas/sem",tr:"2 semanas",kes:"K = 150% (1,5)",C:100,TR:2,ES:150,PP:350,entrada:0,saida:0,mem:"ES = 100×1,5 = 150 | PP = (100×2) + 150 = 200 + 150 = 350 resmas"},
+      {cod:"006",desc:"Essência cosmética (cosméticos)",cen:"Indústria de cosméticos",c:"≈6,67 L/dia (200 L/mês)",tr:"15 dias",kes:"K = 25% (mensal)",C:6.67,TR:15,ES:50,PP:150,entrada:0,saida:0,mem:"C médio = (180+210+210)/3 = 200 L/mês ≈ 6,67/dia | ES = 200×0,25 = 50 L | PP ≈ 150 L"},
+      {cod:"007",desc:"Componente crítico (DEVE PEDIR)",cen:"Gestão de peças críticas",c:"30 un/dia (méd seg/ter/qua)",tr:"10 dias",kes:"K = 500% (5,0)",C:30,TR:10,ES:150,PP:450,entrada:0,saida:0,mem:"C = (25+35+30)/3 = 30 | ES = 30×5 = 150 | PP = (30×10)+150 = 450 | saldo 400 < 450 → PEDIR JÁ"},
+      {cod:"008",desc:"Laptops (varejo eletrônicos)",cen:"Varejo de eletrônicos",c:"5 un/dia (150/mês)",tr:"30 dias",kes:"K = 1000% (10,0)",C:5,TR:30,ES:50,PP:200,entrada:0,saida:0,mem:"C = (140+160+150)/3 = 150/mês → 5/dia | ES = 5×10 = 50 | PP = (5×30)+50 = 200 unidades"},
+      {cod:"009",desc:"Kits de luvas hospitalar (NR-32)",cen:"Hospitalar — NR-32",c:"500 kits/dia (15.000/mês)",tr:"10 dias",kes:"K = 400% (4,0)",C:500,TR:10,ES:2000,PP:7000,entrada:0,saida:0,mem:"C = (14.000+16.000+15.000)/3 = 15.000/mês → 500/dia | ES = 500×4 = 2.000 | PP = (500×10)+2.000 = 7.000 kits"},
+      {cod:"010",desc:"Insumo industrial",cen:"Insumos industriais",c:"40 un/dia (1.200/mês)",tr:"10 dias",kes:"K = 500% (5,0)",C:40,TR:10,ES:200,PP:600,entrada:0,saida:0,mem:"C = (1.100+1.300+1.200)/3 = 1.200/mês → 40/dia | ES = 40×5 = 200 | PP = (40×10)+200 = 600 unidades"}
     ];
+    const DEMO_LEVELS = {"001":{e:500,s:380},"002":{e:200,s:130},"003":{e:600,s:350},"004":{e:300,s:220},"005":{e:800,s:500},"006":{e:400,s:280},"007":{e:1000,s:600},"008":{e:400,s:170},"009":{e:20000,s:13000},"010":{e:1500,s:900}};
+    let snapshotPreDemo=null;
 
     const STORE = "estoque_senai_v1";
     let operador="", modoDemo=false, mov=[], abaAtual="lanc", filtroCtrl="", isAdmin=false, audit=[], deletedCods=[];
@@ -463,15 +465,22 @@
     const $=id=>document.getElementById(id);
     const nf=n=>Number(n).toLocaleString("pt-BR",{maximumFractionDigits:2});
     function esc(t){return String(t).replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;").replaceAll("'","&#039;")}
-    function statusOf(it){const s=it.entrada-it.saida;if(s<=it.ES)return"crit";if(s<=it.PP)return"pedir";return"ok"}
+    function statusOf(it){if(!it.entrada && !it.saida)return"ok";const s=it.entrada-it.saida;if(s<=it.ES)return"crit";if(s<=it.PP)return"pedir";return"ok"}
 
     function deletedLoad(){try{deletedCods=JSON.parse(localStorage.getItem(STORE+"_deletedCods")||"[]");if(!Array.isArray(deletedCods))deletedCods=[]}catch(e){deletedCods=[]}}
     function deletedSave(){try{localStorage.setItem(STORE+"_deletedCods",JSON.stringify(deletedCods))}catch(e){}}
     function aplicarDeletados(){for(let i=ITEMS.length-1;i>=0;i--)if(deletedCods.includes(ITEMS[i].cod))ITEMS.splice(i,1);}
     function userItemsLoad(){try{const u=JSON.parse(localStorage.getItem(STORE+"_userItems")||"[]");u.forEach(it=>{if(!ITEMS.find(x=>x.cod===it.cod))ITEMS.push(it)})}catch(e){}}
     function userItemsSave(){try{const u=ITEMS.filter(i=>i.cen==="Cadastro próprio");localStorage.setItem(STORE+"_userItems",JSON.stringify(u))}catch(e){}}
-    function salvar(){try{localStorage.setItem(STORE,JSON.stringify({operador,mov,ctrl:ITEMS.map(i=>({cod:i.cod,entrada:i.entrada,saida:i.saida}))}));localStorage.setItem(STORE+"_audit",JSON.stringify(audit.slice(-500)))}catch(e){}}
-    function carregar(){try{deletedLoad();userItemsLoad();aplicarDeletados();const d=JSON.parse(localStorage.getItem(STORE)||"{}");if(d.mov)mov=d.mov;if(d.ctrl)d.ctrl.forEach(c=>{const it=ITEMS.find(i=>i.cod===c.cod);if(it){it.entrada=+c.entrada;it.saida=+c.saida}});if(d.operador)operador=d.operador;const a=JSON.parse(localStorage.getItem(STORE+"_audit")||"[]");if(Array.isArray(a))audit=a}catch(e){}}
+    function salvar(){if(modoDemo)return;try{localStorage.setItem(STORE,JSON.stringify({operador,mov,ctrl:ITEMS.map(i=>({cod:i.cod,entrada:i.entrada,saida:i.saida}))}));localStorage.setItem(STORE+"_audit",JSON.stringify(audit.slice(-500)))}catch(e){}}
+    function carregar(){try{deletedLoad();userItemsLoad();aplicarDeletados();const d=JSON.parse(localStorage.getItem(STORE)||"{}");if(d.mov)mov=d.mov;if(d.ctrl)d.ctrl.forEach(c=>{const it=ITEMS.find(i=>i.cod===c.cod);if(it){it.entrada=+c.entrada;it.saida=+c.saida}});if(d.operador)operador=d.operador;const a=JSON.parse(localStorage.getItem(STORE+"_audit")||"[]");if(Array.isArray(a))audit=a;
+      // Migração: se o aparelho tem os valores antigos de seed do exercício salvos, zera para começar limpo.
+      if(!localStorage.getItem(STORE+"_zeroed")){
+        let migrou=false;ITEMS.forEach(it=>{const d2=DEMO_LEVELS[it.cod];if(d2&&it.entrada===d2.e&&it.saida===d2.s){it.entrada=0;it.saida=0;migrou=true;}});
+        localStorage.setItem(STORE+"_zeroed","1");
+        if(migrou)salvar();
+      }
+    }catch(e){}}
     function logEvent(tipo,detalhe){
       const ag=new Date();
       audit.push({tipo,detalhe:detalhe||"",operador:operador||"—",data:ag.toISOString(),dataBR:ag.toLocaleString("pt-BR")});
@@ -517,6 +526,7 @@
     }
 
     function cadastrarItem(){
+      if(modoDemo){toastMsg("Saia do modo DEMO para cadastrar.");return}
       const cod=($("newCod").value||"").trim();
       const desc=($("newDesc").value||"").trim();
       const uni=$("newUni").value;
@@ -537,6 +547,7 @@
     }
 
     function excluirMov(id){
+      if(modoDemo){toastMsg("Saia do modo DEMO para excluir.");return}
       if(!isAdmin){toastMsg("Apenas o administrador pode excluir.");return}
       const idx=mov.findIndex(m=>m.id===id);
       if(idx<0)return;
@@ -551,6 +562,7 @@
     }
 
     function excluirItem(cod){
+      if(modoDemo){toastMsg("Saia do modo DEMO para excluir.");return}
       if(!isAdmin){toastMsg("Apenas o administrador pode excluir itens.");return}
       const it=ITEMS.find(i=>i.cod===cod);
       if(!it)return;
@@ -564,6 +576,7 @@
       logEvent("del","item do catálogo: "+cod+" — "+it.desc);
     }
     function excluirUsuario(nome){
+      if(modoDemo){toastMsg("Saia do modo DEMO para excluir.");return}
       if(!isAdmin){toastMsg("Apenas o administrador pode excluir usuários.");return}
       const antes=audit.filter(e=>e.operador===nome).length;
       if(antes===0)return;
@@ -621,6 +634,7 @@
     function preencherSelect(){const s=$("codItem");s.innerHTML='<option value="">Selecione o item...</option>'+ITEMS.map(i=>{const u=i.unidade?" ("+esc(i.unidade)+")":"";const p=i.perecivel?" • vence rápido":"";return `<option value="${i.cod}">${i.cod} · ${esc(i.desc)}${u}${p}</option>`}).join("")}
 
     function registrar(){
+      if(modoDemo){toastMsg("Saia do modo DEMO para registrar lançamentos.");return}
       const cod=$("codItem").value, t=$("tipoMovimento").value, q=Number($("qtdItem").value);
       if(!cod||!t||!q||q<=0){toastMsg("Escolha o item, o tipo e a quantidade.");return}
       const it=ITEMS.find(i=>i.cod===cod);
@@ -772,6 +786,7 @@
         : `<div class="compra-empty">✅ Tudo certo! Nenhum item precisa de compra no momento.</div>`;
     }
     function editCtrl(idx,campo,val){
+      if(modoDemo){toastMsg("Edição bloqueada no modo DEMO.");renderControle();return}
       ITEMS[idx][campo]=Math.max(0,Number(val)||0);
       const it=ITEMS[idx], s=it.entrada-it.saida, st=statusOf(it), [cls,txt,rcl]=STMAP[st];
       const row=$("r-"+idx); if(row)row.className=rcl;
@@ -854,8 +869,24 @@
 
     function demo(){
       modoDemo=!modoDemo;const b=$("btnDemo");
-      if(modoDemo){b.textContent="🛑 Sair do DEMO";b.classList.add("ativo");$("personagemDemo").classList.add("ativo");showTab("exer");toastMsg("Modo DEMO: exercícios e gráficos do professor.");}
-      else{b.textContent="🎬 Modo DEMO";b.classList.remove("ativo");$("personagemDemo").classList.remove("ativo");showTab("lanc");toastMsg("Modo normal restaurado.");}
+      if(modoDemo){
+        snapshotPreDemo=ITEMS.map(i=>({cod:i.cod,e:i.entrada,s:i.saida}));
+        ITEMS.forEach(i=>{const d=DEMO_LEVELS[i.cod];if(d){i.entrada=d.e;i.saida=d.s;}});
+        b.textContent="🛑 Sair do DEMO";b.classList.add("ativo");
+        $("personagemDemo").classList.add("ativo");
+        $("tb-exer").classList.remove("hide");
+        renderTudo();desenharMovsDia();
+        showTab("exer");
+        toastMsg("Modo DEMO ativado: dados de exemplo na tela. Lançamentos bloqueados.");
+      }else{
+        if(snapshotPreDemo){snapshotPreDemo.forEach(s=>{const it=ITEMS.find(i=>i.cod===s.cod);if(it){it.entrada=s.e;it.saida=s.s;}});snapshotPreDemo=null;}
+        b.textContent="🎬 Modo DEMO";b.classList.remove("ativo");
+        $("personagemDemo").classList.remove("ativo");
+        $("tb-exer").classList.add("hide");
+        renderTudo();desenharMovsDia();
+        showTab("lanc");
+        toastMsg("Modo normal — dados reais.");
+      }
     }
 
     function abrirModal(t,t2){$("modalTitulo").textContent=t;$("modalTexto").textContent=t2;$("modal").classList.add("ativo")}
