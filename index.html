@@ -310,7 +310,7 @@
           </div>
           <div class="tabela-wrap" style="margin-top:8px">
             <table>
-              <thead><tr><th>Código</th><th>Descrição do item</th><th>Entrada</th><th>Saída</th><th>Saldo</th><th>Estoque Seg. (ES)</th><th>Ponto de Pedido (PP)</th><th>Status</th></tr></thead>
+              <thead><tr><th>Código</th><th>Descrição do item</th><th>Entrada</th><th>Saída</th><th>Saldo</th><th>Estoque Seg. (ES)</th><th>Ponto de Pedido (PP)</th><th>Status</th><th>Ações</th></tr></thead>
               <tbody id="corpoControle"></tbody>
             </table>
           </div>
@@ -391,7 +391,7 @@
           </div>
           <h4 style="color:var(--azul);font-size:16px;margin:6px 0 6px">Resumo por pessoa</h4>
           <div class="tabela-wrap"><table>
-            <thead><tr><th>Operador</th><th>1ª entrada</th><th>Última atividade</th><th>Entradas</th><th>Lançam.</th><th>Cadastros</th><th>Exclusões</th></tr></thead>
+            <thead><tr><th>Operador</th><th>1ª entrada</th><th>Última atividade</th><th>Entradas</th><th>Lançam.</th><th>Cadastros</th><th>Exclusões</th><th>Ações</th></tr></thead>
             <tbody id="corpoUsuResumo"></tbody>
           </table></div>
           <h4 style="color:var(--azul);font-size:16px;margin:16px 0 6px">Linha do tempo (últimos 200 eventos)</h4>
@@ -456,7 +456,7 @@
     ];
 
     const STORE = "estoque_senai_v1";
-    let operador="", modoDemo=false, mov=[], abaAtual="lanc", filtroCtrl="", isAdmin=false, audit=[];
+    let operador="", modoDemo=false, mov=[], abaAtual="lanc", filtroCtrl="", isAdmin=false, audit=[], deletedCods=[];
     const ADMIN_USER="jeferson", ADMIN_SENHA="12345";
     const TABS=["lanc","ctrl","dash","usu","exer"];
 
@@ -465,10 +465,13 @@
     function esc(t){return String(t).replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;").replaceAll("'","&#039;")}
     function statusOf(it){const s=it.entrada-it.saida;if(s<=it.ES)return"crit";if(s<=it.PP)return"pedir";return"ok"}
 
+    function deletedLoad(){try{deletedCods=JSON.parse(localStorage.getItem(STORE+"_deletedCods")||"[]");if(!Array.isArray(deletedCods))deletedCods=[]}catch(e){deletedCods=[]}}
+    function deletedSave(){try{localStorage.setItem(STORE+"_deletedCods",JSON.stringify(deletedCods))}catch(e){}}
+    function aplicarDeletados(){for(let i=ITEMS.length-1;i>=0;i--)if(deletedCods.includes(ITEMS[i].cod))ITEMS.splice(i,1);}
     function userItemsLoad(){try{const u=JSON.parse(localStorage.getItem(STORE+"_userItems")||"[]");u.forEach(it=>{if(!ITEMS.find(x=>x.cod===it.cod))ITEMS.push(it)})}catch(e){}}
-    function userItemsSave(){try{const base=10;const extras=ITEMS.slice(base);localStorage.setItem(STORE+"_userItems",JSON.stringify(extras))}catch(e){}}
+    function userItemsSave(){try{const u=ITEMS.filter(i=>i.cen==="Cadastro próprio");localStorage.setItem(STORE+"_userItems",JSON.stringify(u))}catch(e){}}
     function salvar(){try{localStorage.setItem(STORE,JSON.stringify({operador,mov,ctrl:ITEMS.map(i=>({cod:i.cod,entrada:i.entrada,saida:i.saida}))}));localStorage.setItem(STORE+"_audit",JSON.stringify(audit.slice(-500)))}catch(e){}}
-    function carregar(){try{userItemsLoad();const d=JSON.parse(localStorage.getItem(STORE)||"{}");if(d.mov)mov=d.mov;if(d.ctrl)d.ctrl.forEach(c=>{const it=ITEMS.find(i=>i.cod===c.cod);if(it){it.entrada=+c.entrada;it.saida=+c.saida}});if(d.operador)operador=d.operador;const a=JSON.parse(localStorage.getItem(STORE+"_audit")||"[]");if(Array.isArray(a))audit=a}catch(e){}}
+    function carregar(){try{deletedLoad();userItemsLoad();aplicarDeletados();const d=JSON.parse(localStorage.getItem(STORE)||"{}");if(d.mov)mov=d.mov;if(d.ctrl)d.ctrl.forEach(c=>{const it=ITEMS.find(i=>i.cod===c.cod);if(it){it.entrada=+c.entrada;it.saida=+c.saida}});if(d.operador)operador=d.operador;const a=JSON.parse(localStorage.getItem(STORE+"_audit")||"[]");if(Array.isArray(a))audit=a}catch(e){}}
     function logEvent(tipo,detalhe){
       const ag=new Date();
       audit.push({tipo,detalhe:detalhe||"",operador:operador||"—",data:ag.toISOString(),dataBR:ag.toLocaleString("pt-BR")});
@@ -547,6 +550,29 @@
       logEvent("del",r.tipo+" "+r.qtd+" em "+r.codigo+" (era de "+r.operador+")");
     }
 
+    function excluirItem(cod){
+      if(!isAdmin){toastMsg("Apenas o administrador pode excluir itens.");return}
+      const it=ITEMS.find(i=>i.cod===cod);
+      if(!it)return;
+      if(!confirm("Excluir o item "+cod+" — "+it.desc+" do catálogo? Os lançamentos já feitos com esse código continuam no histórico."))return;
+      if(!deletedCods.includes(cod))deletedCods.push(cod);
+      const idx=ITEMS.findIndex(i=>i.cod===cod);
+      if(idx>=0)ITEMS.splice(idx,1);
+      deletedSave();userItemsSave();
+      preencherSelect();renderTudo();
+      toastMsg("Item "+cod+" excluído do catálogo.");
+      logEvent("del","item do catálogo: "+cod+" — "+it.desc);
+    }
+    function excluirUsuario(nome){
+      if(!isAdmin){toastMsg("Apenas o administrador pode excluir usuários.");return}
+      const antes=audit.filter(e=>e.operador===nome).length;
+      if(antes===0)return;
+      if(!confirm("Excluir todo o histórico do usuário '"+nome+"' ("+antes+" evento(s))? Os lançamentos no Excel/online não são afetados."))return;
+      audit=audit.filter(e=>e.operador!==nome);
+      salvar();renderUsuarios();
+      toastMsg("Histórico de "+nome+" excluído ("+antes+" eventos).");
+      logEvent("del","histórico do usuário "+nome+" ("+antes+" eventos)");
+    }
     function renderUsuarios(){
       const bq=($("buscaUsu")?.value||"").trim().toLowerCase();
       const fe=$("fEvento")?.value||"";
@@ -563,7 +589,7 @@
       const por={};
       audit.forEach(e=>{const k=e.operador;if(!por[k])por[k]={nome:k,primeira:e.dataBR,ultima:e.dataBR,entrou:0,lanc:0,cad:0,del:0};por[k].ultima=e.dataBR;if(e.tipo==="entrou")por[k].entrou++;if(e.tipo==="lanc")por[k].lanc++;if(e.tipo==="cad")por[k].cad++;if(e.tipo==="del")por[k].del++;});
       const arr=Object.values(por).sort((a,b)=>(b.entrou+b.lanc+b.cad+b.del)-(a.entrou+a.lanc+a.cad+a.del));
-      $("corpoUsuResumo").innerHTML=arr.length?arr.map(u=>`<tr><td><strong>${esc(u.nome)}</strong></td><td>${esc(u.primeira)}</td><td>${esc(u.ultima)}</td><td>${nf(u.entrou)}</td><td>${nf(u.lanc)}</td><td>${nf(u.cad)}</td><td>${nf(u.del)}</td></tr>`).join(""):`<tr class="empty-row"><td colspan="7">Nenhuma atividade registrada ainda.</td></tr>`;
+      $("corpoUsuResumo").innerHTML=arr.length?arr.map(u=>{const ac=isAdmin?`<button class="btn-del" onclick="excluirUsuario('${esc(u.nome).replace(/'/g,"\\'")}')" title="Excluir todo o histórico desse usuário (admin)">🗑 Excluir</button>`:'<span style="color:var(--cinza);font-size:12px">—</span>';return `<tr><td><strong>${esc(u.nome)}</strong></td><td>${esc(u.primeira)}</td><td>${esc(u.ultima)}</td><td>${nf(u.entrou)}</td><td>${nf(u.lanc)}</td><td>${nf(u.cad)}</td><td>${nf(u.del)}</td><td>${ac}</td></tr>`}).join(""):`<tr class="empty-row"><td colspan="8">Nenhuma atividade registrada ainda.</td></tr>`;
       const lab={entrou:"Entrou no sistema",saiu:"Saiu do sistema",lanc:"Lançamento",cad:"Cadastro de item",del:"Excluiu lançamento"};
       $("corpoUsuTimeline").innerHTML=eventos.length?eventos.slice().reverse().slice(0,200).map(e=>`<tr><td>${esc(e.dataBR)}</td><td><strong>${esc(e.operador)}</strong></td><td><span class="ev ${e.tipo}">${lab[e.tipo]||e.tipo}</span></td><td>${esc(e.detalhe||"")}</td></tr>`).join(""):`<tr class="empty-row"><td colspan="4">Nenhum evento bate com o filtro.</td></tr>`;
     }
@@ -722,12 +748,13 @@
       });
       $("corpoControle").innerHTML = linhas.length? linhas.map(({it,idx})=>{
         const s=it.entrada-it.saida, st=statusOf(it), [cls,txt,rcl]=STMAP[st];
+        const acoes=isAdmin?`<button class="btn-del" onclick="excluirItem('${esc(it.cod)}')" title="Excluir item do catálogo (admin)">🗑 Excluir</button>`:'<span style="color:var(--cinza);font-size:12px">—</span>';
         return `<tr id="r-${idx}" class="${rcl} fade-in"><td><strong>${it.cod}</strong></td><td>${esc(it.desc)}</td>
           <td><input type="number" min="0" value="${it.entrada}" oninput="editCtrl(${idx},'entrada',this.value)"></td>
           <td><input type="number" min="0" value="${it.saida}" oninput="editCtrl(${idx},'saida',this.value)"></td>
           <td id="sld-${idx}"><strong>${nf(s)}</strong></td><td>${nf(it.ES)}</td><td>${nf(it.PP)}</td>
-          <td id="sts-${idx}"><span class="tag ${cls}">${txt}</span></td></tr>`;
-      }).join("") : `<tr class="empty-row"><td colspan="8">Nenhum item bate com a busca/filtro.</td></tr>`;
+          <td id="sts-${idx}"><span class="tag ${cls}">${txt}</span></td><td>${acoes}</td></tr>`;
+      }).join("") : `<tr class="empty-row"><td colspan="9">Nenhum item bate com a busca/filtro.</td></tr>`;
       $("totalCrit").textContent=ITEMS.filter(i=>statusOf(i)==="crit").length;
       renderCompra();
     }
