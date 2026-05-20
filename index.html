@@ -202,6 +202,7 @@
       </div>
       <button class="btn btn-principal" onclick="entrar()">Entrar no painel</button>
       <div class="aviso">Funciona 100% no navegador (PC e celular). Os lançamentos ficam salvos neste aparelho e podem ser exportados para Excel.</div>
+      <div class="aviso" style="background:rgba(0,82,155,.07);border-color:rgba(0,82,155,.25);color:#1e3a8a">Administrador: digite o nome <strong>jeferson</strong> (sem outros termos) e a senha <strong>12345</strong> — só o admin pode excluir itens, lançamentos e usuários.</div>
       <div style="margin-top:10px;font-size:12px;font-weight:800;color:#0a5c30;background:rgba(16,124,65,.08);border:1px solid rgba(16,124,65,.28);padding:7px 12px;border-radius:999px">Conectado ao Excel online</div>
     </div>
   </section>
@@ -219,6 +220,7 @@
           <span id="connPill" class="conn-pill off" title="Status da conexão com o Excel online"><span class="dot"></span><span id="connTxt">Conectando…</span></span>
           <button class="btn btn-excel" onclick="exportarExcel()">⬇ Exportar para Excel</button>
           <button id="btnDemo" class="btn btn-demo" onclick="demo()">🎬 Modo DEMO</button>
+          <button id="btnZerar" class="btn btn-sec hide" onclick="zerarTudo()" style="border-color:rgba(227,0,15,.35);color:var(--vermelho)">🧹 Zerar tudo</button>
           <button class="btn btn-sec" onclick="sair()">Sair</button>
         </div>
       </header>
@@ -504,6 +506,7 @@
       $("nomeTela").innerHTML=esc(operador)+(isAdmin?'<span class="admin-badge">ADMIN</span>':'');
       $("login").style.opacity="0";$("login").style.transition=".35s";
       setTimeout(()=>{$("login").style.display="none";$("dashboard").style.display="block";salvar();iniciarStar();toastMsg("Bem-vindo, "+operador+"!")},300);
+      if($("btnZerar"))$("btnZerar").classList.toggle("hide",!isAdmin);
       logEvent("entrou", isAdmin?"login como administrador":"login");
     }
     function iniciarStar(){
@@ -574,6 +577,18 @@
       preencherSelect();renderTudo();
       toastMsg("Item "+cod+" excluído do catálogo.");
       logEvent("del","item do catálogo: "+cod+" — "+it.desc);
+    }
+    function zerarTudo(){
+      if(modoDemo){toastMsg("Saia do modo DEMO para zerar.");return}
+      if(!isAdmin){toastMsg("Apenas o administrador pode zerar tudo.");return}
+      if(!confirm("Apagar TODOS os lançamentos, a fila de envio, o histórico de usuários e zerar os saldos dos itens?\n\nEsta ação não pode ser desfeita neste aparelho. (Os lançamentos que já caíram no Excel online continuam lá.)"))return;
+      mov=[];fila=[];audit=[];
+      ITEMS.forEach(i=>{i.entrada=0;i.saida=0;});
+      try{localStorage.removeItem(STORE+"_audit");localStorage.removeItem(STORE+"_fila");}catch(e){}
+      salvar();
+      preencherSelect();renderTudo();desenharMovsDia();
+      toastMsg("Tudo zerado — dashboard limpo.");
+      logEvent("del","ZEROU todos os dados locais (saldos, lançamentos, histórico)");
     }
     function excluirUsuario(nome){
       if(modoDemo){toastMsg("Saia do modo DEMO para excluir.");return}
