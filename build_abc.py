@@ -35,12 +35,17 @@ from openpyxl.styles import (
     PatternFill,
     Side,
 )
+from openpyxl.styles.protection import Protection
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.datavalidation import DataValidation
 
 
 SRC = "/root/.claude/uploads/af5f62b9-abe8-4996-80a8-9ffafd174255/0cb5b4c3-curva_abc_reggae_5.xlsx"
 DST = "output/curva_abc_reggae_6.xlsx"
+
+# Sheet protection password. User can change this here, regenerate, or
+# unprotect manually in Excel via Revisao -> Desproteger Planilha.
+PROTECTION_PASSWORD = "reggae"
 
 
 # Reggae palette - vivid bands (per user choice) + cyan bars + red line
@@ -252,6 +257,33 @@ def add_conditional_formatting(ws, first, last):
 
 
 # ---------------------------------------------------------------------------
+# Sheet protection: lock everything except the editable cells (E, F, and the
+# A/B limits in B9/B10). Locked formulas cannot be changed without the
+# password, but the user can still type into Qtd. and Custo Unit.
+# ---------------------------------------------------------------------------
+def add_sheet_protection(ws, first, last, password=PROTECTION_PASSWORD):
+    unlocked = Protection(locked=False)
+
+    # Unlock the data-entry columns E (Qtd.) and F (Custo Unit.) for all rows.
+    for r in range(first, last + 1):
+        ws.cell(row=r, column=5).protection = unlocked   # E
+        ws.cell(row=r, column=6).protection = unlocked   # F
+
+    # Unlock the ABC class limits so the user can still tune them.
+    ws["B9"].protection = unlocked
+    ws["B10"].protection = unlocked
+
+    ws.protection.password = password
+    ws.protection.sheet = True
+    # Allow the user to select cells and sort/filter without unprotecting.
+    ws.protection.selectLockedCells = False
+    ws.protection.selectUnlockedCells = False
+    ws.protection.sort = True
+    ws.protection.autoFilter = True
+    ws.protection.enable()
+
+
+# ---------------------------------------------------------------------------
 # Data validation on the A/B limits (B9, B10)
 # ---------------------------------------------------------------------------
 def add_data_validation(ws):
@@ -277,8 +309,10 @@ def add_data_validation(ws):
 # ---------------------------------------------------------------------------
 def add_editable_comments(ws, first, last):
     note_qty = Comment(
-        "Edite apenas as colunas E (Qtd.) e F (Custo Unit.).\n"
-        "V.T., % e Classe ABC sao recalculados automaticamente.",
+        "Edite apenas as colunas E (Qtd.) e F (Custo Unit.) - elas estao\n"
+        "desbloqueadas. V.T., % e Classe ABC recalculam automaticamente.\n"
+        "Para desproteger a aba: Revisao -> Desproteger Planilha\n"
+        "Senha: reggae",
         "Curva ABC",
     )
     note_qty.width = 220
@@ -628,6 +662,11 @@ def build_dashboard(wb):
     # Tab order: dashboard first
     ws.sheet_view.showGridLines = False
 
+    # Protect the dashboard (read-only - it pulls everything from the ABC abas).
+    ws.protection.password = PROTECTION_PASSWORD
+    ws.protection.sheet = True
+    ws.protection.enable()
+
 
 # ---------------------------------------------------------------------------
 # Run.
@@ -645,6 +684,7 @@ def main():
         add_data_validation(ws)
         add_editable_comments(ws, first, last)
         add_pareto_chart(ws, sheet_name, first, last)
+        add_sheet_protection(ws, first, last)
         # Light tab colour to reinforce the reggae theme.
         if sheet_name.startswith("🟢"):
             ws.sheet_properties.tabColor = GREEN
