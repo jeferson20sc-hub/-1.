@@ -3,14 +3,16 @@ import { useEffect, useMemo, useState } from "react";
 import { Toaster, toast } from "sonner";
 
 import { OperatorGate } from "@/components/operator-gate";
+import { QrScanner } from "@/components/qr-scanner";
 import { Sidebar, type View } from "@/components/layout/sidebar";
 import { Topbar } from "@/components/layout/topbar";
-import { ComingSoonView } from "@/views/coming-soon";
-import { ConfigView } from "@/views/config";
 import { DashboardView } from "@/views/dashboard";
 import { EstoqueView } from "@/views/estoque";
+import { GraficosView } from "@/views/graficos";
 import { LancamentosView } from "@/views/lancamentos";
+import { ConfigView } from "@/views/config";
 import { DEFAULT_ITEMS } from "@/lib/items";
+import { exportToExcel, printAsPdf } from "@/lib/export";
 import { useLocalState } from "@/lib/storage";
 import { syncEngine } from "@/lib/sync";
 import type { Movement, StockItem } from "@/lib/types";
@@ -29,8 +31,14 @@ const VIEW_TITLES: Record<View, { title: string; subtitle: string }> = {
     title: "Controle de Estoque",
     subtitle: "Status de cada item monitorado",
   },
-  graficos: { title: "Gráficos", subtitle: "Análises e tendências" },
-  scanner: { title: "Scanner", subtitle: "Leitura de QR Code e código de barras" },
+  graficos: {
+    title: "Gráficos",
+    subtitle: "Pareto 80/20 · Dente de serra · Movimentações por dia",
+  },
+  scanner: {
+    title: "Scanner",
+    subtitle: "Leitura de QR Code e código de barras",
+  },
   config: { title: "Configurações", subtitle: "Integrações e preferências" },
 };
 
@@ -55,6 +63,9 @@ export default function App() {
   const [webhookUrl, setWebhookUrlState] = useState<string>(() =>
     getWebhookUrl(),
   );
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [scannerOpen, setScannerOpen] = useState(false);
+  const [pendingCode, setPendingCode] = useState<string | null>(null);
 
   // Seed the sync engine with persisted state on mount, then mirror its
   // emissions back into React state. We intentionally don't depend on
@@ -106,9 +117,27 @@ export default function App() {
     syncEngine.enqueue(m);
   }
 
+  function handleScannerResult(code: string) {
+    setPendingCode(code);
+    setView("lancamentos");
+  }
+
   return (
     <div className="min-h-screen flex bg-background">
-      <Sidebar current={view} onChange={setView} operator={operator} />
+      <Sidebar
+        current={view}
+        onChange={(v) => {
+          // scanner view opens the scanner modal instead of navigating
+          if (v === "scanner") {
+            setScannerOpen(true);
+          } else {
+            setView(v);
+          }
+        }}
+        operator={operator}
+        mobileOpen={sidebarOpen}
+        onMobileClose={() => setSidebarOpen(false)}
+      />
       <main className="flex-1 flex flex-col min-w-0 gradient-mesh">
         <Topbar
           title={meta.title}
@@ -121,6 +150,19 @@ export default function App() {
           }}
           onLogout={() => {
             setOperator("");
+          }}
+          onMenuOpen={() => setSidebarOpen(true)}
+          onExportExcel={() => {
+            try {
+              exportToExcel(items, movements);
+              toast.success("Planilha exportada com sucesso");
+            } catch (err) {
+              toast.error("Erro ao exportar planilha");
+              console.error(err);
+            }
+          }}
+          onExportPdf={() => {
+            printAsPdf();
           }}
         />
 
@@ -143,20 +185,24 @@ export default function App() {
                     movements={movements}
                     operator={operator}
                     onMovement={handleMovement}
-                    onOpenScanner={() => setView("scanner")}
+                    onOpenScanner={() => setScannerOpen(true)}
+                    pendingCode={pendingCode}
+                    onPendingCodeConsumed={() => setPendingCode(null)}
                   />
                 )}
                 {view === "estoque" && <EstoqueView items={items} />}
                 {view === "graficos" && (
-                  <ComingSoonView
-                    title="Gráficos avançados"
-                    description="Pareto 80/20, dente de serra por item e movimentações por dia chegam na próxima entrega."
-                  />
+                  <GraficosView items={items} movements={movements} />
                 )}
                 {view === "scanner" && (
-                  <ComingSoonView
-                    title="Scanner QR / Código de Barras"
-                    description="Leitor html5-qrcode com câmera em tela cheia, troca frontal/traseira e upload de imagem chega na próxima entrega."
+                  <LancamentosView
+                    items={items}
+                    movements={movements}
+                    operator={operator}
+                    onMovement={handleMovement}
+                    onOpenScanner={() => setScannerOpen(true)}
+                    pendingCode={pendingCode}
+                    onPendingCodeConsumed={() => setPendingCode(null)}
                   />
                 )}
                 {view === "config" && (
@@ -164,7 +210,6 @@ export default function App() {
                     initialUrl={webhookUrl}
                     onSaved={(u) => {
                       setWebhookUrlState(u);
-                      // Triggers any queued/error items to flush to the new URL
                       syncEngine.run();
                     }}
                     onClearMovements={() => {
@@ -179,6 +224,13 @@ export default function App() {
           </div>
         </div>
       </main>
+
+      <QrScanner
+        open={scannerOpen}
+        onClose={() => setScannerOpen(false)}
+        onScan={handleScannerResult}
+      />
+
       <Toaster richColors position="top-right" />
     </div>
   );

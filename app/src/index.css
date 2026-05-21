@@ -114,3 +114,49 @@
     border-radius: 8px;
   }
 }
+
+@media print {
+  aside,
+  header,
+  .print\:hidden {
+    display: none !important;
+  }
+  body {
+    background: white !important;
+    color: black !important;
+    font-size: 11pt;
+  }
+  main {
+    display: block !important;
+    background: none !important;
+  }
+  .gradient-mesh {
+    background-image: none !important;
+  }
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    page-break-inside: auto;
+  }
+  th,
+  td {
+    border: 1px solid #ccc;
+    padding: 4px 8px;
+    font-size: 10pt;
+  }
+  thead {
+    background-color: #f0f0f0 !important;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+  .card {
+    break-inside: avoid;
+    margin-bottom: 16px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+  }
+  @page {
+    margin: 1.5cm;
+    size: A4 landscape;
+  }
+}

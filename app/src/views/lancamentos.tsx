@@ -1,8 +1,21 @@
+import {
+  type Column,
+  type ColumnDef,
+  flexRender,
+  getCoreRowModel,
+  getPaginationRowModel,
+  getSortedRowModel,
+  type SortingState,
+  useReactTable,
+} from "@tanstack/react-table";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { motion } from "framer-motion";
 import {
+  ArrowUpDown,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   CircleAlert,
   Cloud,
   CloudUpload,
@@ -11,7 +24,7 @@ import {
   QrCode,
   ScanLine,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -29,11 +42,17 @@ interface Props {
   operator: string;
   onMovement: (m: Movement, applyTo: StockItem) => void;
   onOpenScanner: () => void;
+  pendingCode?: string | null;
+  onPendingCodeConsumed?: () => void;
 }
 
 const SYNC_TONE: Record<
   SyncStatus,
-  { label: string; variant: "success" | "warning" | "destructive" | "muted"; icon: typeof Cloud }
+  {
+    label: string;
+    variant: "success" | "warning" | "destructive" | "muted";
+    icon: typeof Cloud;
+  }
 > = {
   ok: { label: "Excel", variant: "success", icon: Cloud },
   sending: { label: "Enviando", variant: "warning", icon: CloudUpload },
@@ -42,23 +61,138 @@ const SYNC_TONE: Record<
   local: { label: "Local", variant: "muted", icon: CheckCircle2 },
 };
 
+const PAGE_SIZE = 20;
+
 export function LancamentosView({
   items,
   movements,
   operator,
   onMovement,
   onOpenScanner,
+  pendingCode,
+  onPendingCodeConsumed,
 }: Props) {
   const [code, setCode] = useState("");
   const [type, setType] = useState<MovementType | "">("");
   const [qty, setQty] = useState("");
+  const [sorting, setSorting] = useState<SortingState>([
+    { id: "isoTimestamp", desc: true },
+  ]);
 
   const selected = useMemo(
     () => items.find((i) => i.cod === code.trim()),
     [items, code],
   );
 
-  const recent = movements.slice(0, 25);
+  // Apply scanned code from QrScanner modal (passed as prop to avoid race condition)
+  useEffect(() => {
+    if (pendingCode) {
+      setCode(pendingCode);
+      onPendingCodeConsumed?.();
+    }
+  }, [pendingCode, onPendingCodeConsumed]);
+
+  const columns = useMemo<ColumnDef<Movement>[]>(
+    () => [
+      {
+        accessorKey: "isoTimestamp",
+        header: ({ column }) => <SortHeader label="Quando" column={column} />,
+        cell: ({ row }) => (
+          <div className="text-xs">
+            <div className="font-semibold">{row.original.data}</div>
+            <div className="text-muted-foreground">{row.original.hora}</div>
+          </div>
+        ),
+      },
+      {
+        accessorKey: "operador",
+        header: ({ column }) => (
+          <SortHeader label="Operador" column={column} />
+        ),
+        cell: ({ getValue }) => (
+          <span className="text-xs">{getValue<string>()}</span>
+        ),
+      },
+      {
+        accessorKey: "codigo",
+        header: ({ column }) => <SortHeader label="Item" column={column} />,
+        cell: ({ row }) => (
+          <div>
+            <div className="font-mono text-xs font-semibold">
+              {row.original.codigo}
+            </div>
+            <div className="text-xs text-muted-foreground truncate max-w-[24ch]">
+              {row.original.descricao}
+            </div>
+          </div>
+        ),
+      },
+      {
+        accessorKey: "tipo",
+        header: "Tipo",
+        cell: ({ getValue }) => (
+          <Badge variant={getValue<string>() === "Entrada" ? "success" : "destructive"}>
+            {getValue<string>()}
+          </Badge>
+        ),
+      },
+      {
+        accessorKey: "qtd",
+        header: ({ column }) => (
+          <SortHeader label="Qtd" column={column} right />
+        ),
+        cell: ({ getValue }) => (
+          <span className="font-mono text-xs">{nf(getValue<number>())}</span>
+        ),
+        meta: { right: true },
+      },
+      {
+        accessorKey: "saldo",
+        header: ({ column }) => (
+          <SortHeader label="Saldo" column={column} right />
+        ),
+        cell: ({ getValue }) => (
+          <span className="font-mono font-semibold text-xs">
+            {nf(getValue<number>())}
+          </span>
+        ),
+        meta: { right: true },
+      },
+      {
+        accessorKey: "_sync",
+        header: "Excel",
+        cell: ({ row }) => {
+          const tone = SYNC_TONE[row.original._sync];
+          const Icon = tone.icon;
+          return (
+            <Badge variant={tone.variant} title={row.original._error}>
+              <Icon
+                className={cn(
+                  "size-3",
+                  (row.original._sync === "sending" ||
+                    row.original._sync === "queued") &&
+                    "animate-spin",
+                )}
+              />
+              {tone.label}
+            </Badge>
+          );
+        },
+      },
+    ],
+    [],
+  );
+
+  const table = useReactTable({
+    data: movements,
+    columns,
+    state: { sorting },
+    onSortingChange: setSorting,
+    getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    getPaginationRowModel: getPaginationRowModel(),
+    initialState: { pagination: { pageSize: PAGE_SIZE } },
+  });
 
   function submit() {
     if (!selected) {
@@ -190,6 +324,7 @@ export function LancamentosView({
               placeholder="0"
               value={qty}
               onChange={(e) => setQty(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && submit()}
               className="text-base"
             />
           </div>
@@ -204,7 +339,7 @@ export function LancamentosView({
         <CardHeader>
           <CardTitle className="flex items-center justify-between">
             <span className="flex items-center gap-2">
-              <QrCode className="size-4 text-primary" /> Últimos lançamentos
+              <QrCode className="size-4 text-primary" /> Histórico de lançamentos
             </span>
             <Badge variant="outline">{movements.length}</Badge>
           </CardTitle>
@@ -213,87 +348,129 @@ export function LancamentosView({
           <div className="overflow-x-auto scrollbar-thin">
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-left text-xs text-muted-foreground uppercase tracking-wider border-b border-border bg-muted/20">
-                  <th className="px-4 py-3">Quando</th>
-                  <th className="px-4 py-3">Operador</th>
-                  <th className="px-4 py-3">Item</th>
-                  <th className="px-4 py-3">Tipo</th>
-                  <th className="px-4 py-3 text-right">Qtd</th>
-                  <th className="px-4 py-3 text-right">Saldo</th>
-                  <th className="px-4 py-3">Excel</th>
-                </tr>
+                {table.getHeaderGroups().map((hg) => (
+                  <tr
+                    key={hg.id}
+                    className="text-left text-xs text-muted-foreground uppercase tracking-wider border-b border-border bg-muted/20"
+                  >
+                    {hg.headers.map((h) => (
+                      <th
+                        key={h.id}
+                        className={cn(
+                          "px-4 py-3",
+                          (h.column.columnDef.meta as { right?: boolean })
+                            ?.right && "text-right",
+                        )}
+                      >
+                        {h.isPlaceholder
+                          ? null
+                          : flexRender(
+                              h.column.columnDef.header,
+                              h.getContext(),
+                            )}
+                      </th>
+                    ))}
+                  </tr>
+                ))}
               </thead>
               <tbody>
-                {recent.length === 0 ? (
+                {table.getRowModel().rows.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={7}
+                      colSpan={columns.length}
                       className="px-4 py-12 text-center text-muted-foreground text-sm"
                     >
                       Nenhum lançamento ainda. Use o formulário ao lado.
                     </td>
                   </tr>
                 ) : (
-                  recent.map((m) => {
-                    const tone = SYNC_TONE[m._sync];
-                    const Icon = tone.icon;
-                    return (
-                      <motion.tr
-                        key={m.id}
-                        layout
-                        initial={{ opacity: 0, x: -8 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        className="border-b border-border last:border-0"
-                      >
-                        <td className="px-4 py-3 text-xs">
-                          <div className="font-semibold">{m.data}</div>
-                          <div className="text-muted-foreground">{m.hora}</div>
+                  table.getRowModel().rows.map((row) => (
+                    <motion.tr
+                      key={row.id}
+                      layout
+                      initial={{ opacity: 0, x: -8 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      className="border-b border-border last:border-0"
+                    >
+                      {row.getVisibleCells().map((cell) => (
+                        <td
+                          key={cell.id}
+                          className={cn(
+                            "px-4 py-3",
+                            (cell.column.columnDef.meta as { right?: boolean })
+                              ?.right && "text-right",
+                          )}
+                        >
+                          {flexRender(
+                            cell.column.columnDef.cell,
+                            cell.getContext(),
+                          )}
                         </td>
-                        <td className="px-4 py-3 text-xs">{m.operador}</td>
-                        <td className="px-4 py-3">
-                          <div className="font-mono text-xs font-semibold">
-                            {m.codigo}
-                          </div>
-                          <div className="text-xs text-muted-foreground truncate max-w-[28ch]">
-                            {m.descricao}
-                          </div>
-                        </td>
-                        <td className="px-4 py-3">
-                          <Badge
-                            variant={
-                              m.tipo === "Entrada" ? "success" : "destructive"
-                            }
-                          >
-                            {m.tipo}
-                          </Badge>
-                        </td>
-                        <td className="px-4 py-3 text-right font-mono">
-                          {nf(m.qtd)}
-                        </td>
-                        <td className="px-4 py-3 text-right font-mono font-semibold">
-                          {nf(m.saldo)}
-                        </td>
-                        <td className="px-4 py-3">
-                          <Badge variant={tone.variant} title={m._error}>
-                            <Icon
-                              className={cn(
-                                "size-3",
-                                m._sync === "sending" && "animate-spin",
-                                m._sync === "queued" && "animate-spin",
-                              )}
-                            />
-                            {tone.label}
-                          </Badge>
-                        </td>
-                      </motion.tr>
-                    );
-                  })
+                      ))}
+                    </motion.tr>
+                  ))
                 )}
               </tbody>
             </table>
           </div>
+
+          {/* Pagination */}
+          {table.getPageCount() > 1 && (
+            <div className="flex items-center justify-between px-4 py-3 border-t border-border">
+              <span className="text-xs text-muted-foreground">
+                {movements.length} lançamento(s) · Pág.{" "}
+                {table.getState().pagination.pageIndex + 1} /{" "}
+                {table.getPageCount()}
+              </span>
+              <div className="flex items-center gap-1">
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="size-7"
+                  onClick={() => table.previousPage()}
+                  disabled={!table.getCanPreviousPage()}
+                >
+                  <ChevronLeft className="size-3.5" />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="size-7"
+                  onClick={() => table.nextPage()}
+                  disabled={!table.getCanNextPage()}
+                >
+                  <ChevronRight className="size-3.5" />
+                </Button>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+function SortHeader({
+  label,
+  column,
+  right,
+}: {
+  label: string;
+  column: Column<Movement, unknown>;
+  right?: boolean;
+}) {
+  return (
+    <button
+      onClick={column.getToggleSortingHandler()}
+      className={cn(
+        "flex items-center gap-1 hover:text-foreground transition-colors",
+        right && "ml-auto",
+      )}
+    >
+      {label}
+      <ArrowUpDown className="size-3 opacity-50" />
+      {column.getIsSorted() === "asc" && " ↑"}
+      {column.getIsSorted() === "desc" && " ↓"}
+    </button>
   );
 }

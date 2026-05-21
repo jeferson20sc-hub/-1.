@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { motion } from "framer-motion";
 
+import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 
 export type View =
@@ -30,21 +31,31 @@ const ITEMS: Item[] = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
   { id: "lancamentos", label: "Lançamentos", icon: ArrowLeftRight },
   { id: "estoque", label: "Estoque", icon: Boxes },
-  { id: "graficos", label: "Gráficos", icon: BarChart3, hint: "Pareto, dente de serra" },
-  { id: "scanner", label: "Scanner", icon: QrCode, hint: "QR / Código de barras" },
+  {
+    id: "graficos",
+    label: "Gráficos",
+    icon: BarChart3,
+    hint: "Pareto · Dente de serra",
+  },
+  {
+    id: "scanner",
+    label: "Scanner",
+    icon: QrCode,
+    hint: "QR / Código de barras",
+  },
   { id: "config", label: "Configurações", icon: Settings },
 ];
 
-interface Props {
+interface NavProps {
   current: View;
   onChange: (v: View) => void;
   operator: string;
 }
 
-export function Sidebar({ current, onChange, operator }: Props) {
+function SidebarNav({ current, onChange, operator }: NavProps) {
   return (
-    <aside className="hidden lg:flex w-64 shrink-0 flex-col border-r border-border/60 bg-card/40 backdrop-blur-xl">
-      <div className="flex items-center gap-3 px-5 h-16 border-b border-border/60">
+    <>
+      <div className="flex items-center gap-3 px-5 h-16 shrink-0 border-b border-border/60">
         <div className="size-10 rounded-xl bg-gradient-to-br from-primary to-primary/60 grid place-items-center shadow-md shadow-primary/30">
           <Sparkles className="size-5 text-primary-foreground" strokeWidth={2.4} />
         </div>
@@ -83,8 +94,10 @@ export function Sidebar({ current, onChange, operator }: Props) {
               {it.hint && (
                 <span
                   className={cn(
-                    "ml-auto relative z-10 text-[10px] uppercase tracking-wider",
-                    active ? "text-primary-foreground/70" : "text-muted-foreground/70",
+                    "ml-auto relative z-10 text-[10px] uppercase tracking-wider hidden xl:inline",
+                    active
+                      ? "text-primary-foreground/70"
+                      : "text-muted-foreground/70",
                   )}
                 >
                   {it.hint}
@@ -95,19 +108,59 @@ export function Sidebar({ current, onChange, operator }: Props) {
         })}
       </nav>
 
-      <div className="p-3 border-t border-border/60">
+      <div className="p-3 border-t border-border/60 shrink-0">
         <div className="rounded-xl bg-muted/50 p-3 flex items-center gap-3">
-          <div className="size-9 rounded-full bg-gradient-to-br from-success to-success/60 grid place-items-center text-success-foreground font-bold text-sm shadow">
+          <div className="size-9 rounded-full bg-gradient-to-br from-success to-success/60 grid place-items-center text-success-foreground font-bold text-sm shadow shrink-0">
             {operator.charAt(0).toUpperCase() || "?"}
           </div>
           <div className="min-w-0">
             <div className="text-xs font-semibold truncate">
               {operator || "Sem operador"}
             </div>
-            <div className="text-[11px] text-muted-foreground">Operador ativo</div>
+            <div className="text-[11px] text-muted-foreground">
+              Operador ativo
+            </div>
           </div>
         </div>
       </div>
-    </aside>
+    </>
+  );
+}
+
+interface Props extends NavProps {
+  mobileOpen: boolean;
+  onMobileClose: () => void;
+}
+
+export function Sidebar({
+  current,
+  onChange,
+  operator,
+  mobileOpen,
+  onMobileClose,
+}: Props) {
+  function handleChange(v: View) {
+    onChange(v);
+    onMobileClose();
+  }
+
+  return (
+    <>
+      {/* Desktop sidebar */}
+      <aside className="hidden lg:flex w-64 shrink-0 flex-col border-r border-border/60 bg-card/40 backdrop-blur-xl">
+        <SidebarNav current={current} onChange={onChange} operator={operator} />
+      </aside>
+
+      {/* Mobile drawer */}
+      <Sheet open={mobileOpen} onOpenChange={(o) => !o && onMobileClose()}>
+        <SheetContent side="left" className="p-0 w-72 flex flex-col">
+          <SidebarNav
+            current={current}
+            onChange={handleChange}
+            operator={operator}
+          />
+        </SheetContent>
+      </Sheet>
+    </>
   );
 }
