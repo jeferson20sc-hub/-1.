@@ -33,12 +33,14 @@ export function QrScanner({ open, onClose, onScan }: Props) {
     setErr(null);
     const el = document.getElementById(CONTAINER_ID);
     if (!el) return;
+    // Use explicit dimensions so html5-qrcode can read container size
+    const box = Math.round(Math.min(el.clientWidth || 260, el.clientHeight || 300) * 0.68) || 220;
     const scanner = new Html5Qrcode(CONTAINER_ID);
     scannerRef.current = scanner;
     try {
       await scanner.start(
         { facingMode: f },
-        { fps: 12, qrbox: { width: 240, height: 240 } },
+        { fps: 12, qrbox: { width: box, height: box } },
         (text) => {
           onScan(text);
           stopScanner();
@@ -47,7 +49,23 @@ export function QrScanner({ open, onClose, onScan }: Props) {
         () => {},
       );
     } catch (_) {
-      setErr("Câmera não disponível. Use o botão de upload para digitalizar uma imagem.");
+      // Fallback: try without facingMode constraint (any camera)
+      try {
+        const scanner2 = new Html5Qrcode(CONTAINER_ID);
+        scannerRef.current = scanner2;
+        await scanner2.start(
+          { deviceId: { ideal: "environment" } } as unknown as string,
+          { fps: 12, qrbox: { width: box, height: box } },
+          (text) => {
+            onScan(text);
+            stopScanner();
+            onClose();
+          },
+          () => {},
+        );
+      } catch (_2) {
+        setErr("Câmera não disponível. Verifique a permissão no navegador e tente novamente — ou use o upload de imagem.");
+      }
     }
   }
 
@@ -57,9 +75,10 @@ export function QrScanner({ open, onClose, onScan }: Props) {
       return;
     }
     let alive = true;
+    // 200ms delay: ensures the dialog is fully painted and the container has dimensions
     const t = window.setTimeout(() => {
       if (alive) startScanner(facing);
-    }, 120);
+    }, 200);
     return () => {
       alive = false;
       clearTimeout(t);
@@ -120,8 +139,8 @@ export function QrScanner({ open, onClose, onScan }: Props) {
           </div>
 
           {/* Scanner viewport */}
-          <div className="flex-1 relative overflow-hidden">
-            <div id={CONTAINER_ID} className="w-full h-full" />
+          <div className="flex-1 relative overflow-hidden bg-black">
+            <div id={CONTAINER_ID} style={{ width: "100%", height: "100%" }} />
 
             {/* Targeting overlay */}
             <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
@@ -137,10 +156,16 @@ export function QrScanner({ open, onClose, onScan }: Props) {
             </div>
           </div>
 
-          {/* Error banner */}
+          {/* Error banner with retry */}
           {err && (
-            <div className="px-4 py-2 bg-destructive/30 border-t border-destructive/40 text-white/90 text-xs text-center shrink-0">
-              {err}
+            <div className="px-4 py-2 bg-destructive/30 border-t border-destructive/40 text-white/90 text-xs text-center shrink-0 space-y-2">
+              <p>{err}</p>
+              <button
+                onClick={() => startScanner(facing)}
+                className="px-3 py-1 rounded-md bg-white/20 hover:bg-white/30 text-white text-xs font-semibold transition-colors"
+              >
+                ↺ Tentar novamente
+              </button>
             </div>
           )}
 
