@@ -228,7 +228,7 @@
       </div>
       <button class="btn btn-principal" onclick="entrar()">Entrar no painel</button>
       <div class="aviso">Funciona 100% no navegador (PC e celular). Os lançamentos ficam salvos neste aparelho e podem ser exportados para Excel.</div>
-      <div class="aviso" style="background:rgba(0,82,155,.07);border-color:rgba(0,82,155,.25);color:#1e3a8a">Administrador: digite o nome <strong>jeferson</strong> (sem outros termos) e a senha <strong>12345</strong> — só o admin pode excluir itens, lançamentos e usuários.</div>
+      
       <div style="margin-top:14px;font-size:11px;color:var(--cinza);line-height:1.5">Desenvolvido por <strong>Jeferson Dos Santos</strong> · Orientação: <strong>Prof. Pablo</strong> · SENAI</div>
       <div style="margin-top:10px;font-size:12px;font-weight:800;color:#0a5c30;background:rgba(16,124,65,.08);border:1px solid rgba(16,124,65,.28);padding:7px 12px;border-radius:999px">Conectado ao Excel online</div>
     </div>
@@ -466,10 +466,13 @@
   <div id="scannerModal" class="scanner-modal" onclick="if(event.target===this)fecharScanner()">
     <div class="scanner-card">
       <h3>📷 Leitor de código de barras</h3>
-      <p class="hint">Aponte a câmera para o código de barras. O número aparece sozinho no campo. Funciona com QR e a maioria dos códigos de produto (EAN-13, Code 128…).</p>
-      <div id="leitorCam"></div>
-      <div class="scanner-actions">
-        <button class="btn btn-sec" onclick="fecharScanner()">Fechar</button>
+      <p class="hint">Aponte a câmera para o código. Funciona com QR Code, EAN-13, Code 128 e outros. Se a câmera não abrir, verifique a permissão no navegador.</p>
+      <div id="leitorCam" style="min-height:260px;width:100%;background:#000;border-radius:12px;overflow:hidden"></div>
+      <div id="scannerErro" style="display:none;margin-top:10px;padding:10px 14px;background:#fef2f2;border:1px solid #fca5a5;border-radius:10px;color:#991b1b;font-size:13px;text-align:center"></div>
+      <div class="scanner-actions" style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:12px">
+        <button id="btnVirarCam" class="btn btn-sec" onclick="virarCamera()" style="display:none">🔄 Virar câmera</button>
+        <button class="btn btn-sec" onclick="_iniciarCamera(false)">↺ Tentar novamente</button>
+        <button class="btn btn-sec" onclick="fecharScanner()">✕ Fechar</button>
       </div>
     </div>
   </div>
@@ -803,21 +806,40 @@
         if(!window.Html5Qrcode) await loadScript("https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.10/html5-qrcode.min.js");
       }catch(e){toastMsg("Não foi possível carregar o leitor — verifique sua internet.");return}
       $("scannerModal").classList.add("on");
+      const el=document.getElementById("leitorCam");
+      el.innerHTML="";
+      $("scannerErro").style.display="none";
+      await _iniciarCamera();
+    }
+    async function _iniciarCamera(forcarFrontal){
+      const el=document.getElementById("leitorCam");
+      if(!el)return;
+      el.innerHTML="";
       try{
-        const el=document.getElementById("leitorCam");el.innerHTML="";
+        if(__qr){try{await __qr.stop();}catch(e){} __qr=null;}
         __qr=new Html5Qrcode("leitorCam");
-        const config={fps:10,qrbox:{width:260,height:160}};
-        await __qr.start({facingMode:"environment"},config,(txt)=>{
+        const box=Math.round(Math.min(el.clientWidth||260,el.clientHeight||260)*0.7)||220;
+        const config={fps:12,qrbox:{width:box,height:box}};
+        const camMode=forcarFrontal?{facingMode:"user"}:{facingMode:"environment"};
+        await __qr.start(camMode,config,(txt)=>{
           if(!txt)return;
           const t=$(__qrTarget);
           if(t&&t.tagName==="SELECT"){
             const op=Array.from(t.options).find(o=>o.value===txt||o.text.startsWith(txt));
-            if(op){t.value=op.value;toastMsg("Item lido: "+op.value);}else{toastMsg("Código lido: "+txt+" (não está no catálogo).");}
-          }else if(t){t.value=txt;toastMsg("Código lido: "+txt);}
+            if(op){t.value=op.value;toastMsg("✅ Item lido: "+op.value);}else{toastMsg("Código lido: "+txt+" (não encontrado no catálogo).");}
+          }else if(t){t.value=txt;toastMsg("✅ Código lido: "+txt);}
           fecharScanner();
         },()=>{});
-      }catch(e){toastMsg("Permita o acesso à câmera para usar o leitor.");fecharScanner();}
+        $("scannerErro").style.display="none";
+        $("btnVirarCam").style.display="inline-flex";
+      }catch(e){
+        $("scannerErro").style.display="block";
+        $("scannerErro").textContent="Câmera não disponível. Verifique a permissão no navegador e tente novamente.";
+        $("btnVirarCam").style.display="none";
+      }
     }
+    function virarCamera(){_iniciarCamera(__qrCamFrontal=!__qrCamFrontal);}
+    let __qrCamFrontal=false;
     function fecharScanner(){try{if(__qr){__qr.stop().then(()=>__qr.clear()).catch(()=>{});}}catch(e){}__qr=null;$("scannerModal").classList.remove("on");}
 
     // ===== Exportar relatório em PDF =====
