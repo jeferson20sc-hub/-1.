@@ -738,7 +738,7 @@
       mov.unshift(reg);
       $("tipoMovimento").value="";$("qtdItem").value="";
       salvar();renderTudo();desenharMovsDia();
-      abrirModal("Salvo!",it.demo?"Lançamento demo — salvo localmente, não enviado ao Excel.":"Movimentação registrada e saldo atualizado.");
+      abrirModal("Salvo!","Movimentação registrada e enviada ao Excel.");
       setTimeout(()=>fecharModal("Pronto","Disponível na Planilha de Controle."),900);
       enviarWebhook(reg);
       toastMsg(t+" de "+nf(q)+" em "+it.cod+" registrada.");
@@ -785,7 +785,6 @@
     }
     function enviarWebhook(reg){
       if(!WEBHOOK_URL || !WEBHOOK_URL.trim()){setStatusSync("Modo local (sem URL configurada).");setConn("off","Modo local");return;}
-      if(reg && reg.isDemo){setStatusSync("Demo — não enviado ao Excel.");return;}
       if(reg) fila.push(reg);
       salvarFila();
       flushFila();
@@ -857,27 +856,54 @@
       const el=document.getElementById("leitorCam");
       if(!el)return;
       el.innerHTML="";
+      const onSuccess=(txt)=>{
+        if(!txt)return;
+        const t=$(__qrTarget);
+        if(t&&t.tagName==="SELECT"){
+          const op=Array.from(t.options).find(o=>o.value===txt||o.text.startsWith(txt));
+          if(op){t.value=op.value;toastMsg("✅ Item lido: "+op.value);}else{toastMsg("Código lido: "+txt+" (não encontrado no catálogo).");}
+        }else if(t){t.value=txt;toastMsg("✅ Código lido: "+txt);}
+        fecharScanner();
+      };
+      const box=Math.round(Math.min(el.clientWidth||260,el.clientHeight||260)*0.7)||220;
+      const config={fps:12,qrbox:{width:box,height:box}};
       try{
         if(__qr){try{await __qr.stop();}catch(e){} __qr=null;}
         __qr=new Html5Qrcode("leitorCam");
-        const box=Math.round(Math.min(el.clientWidth||260,el.clientHeight||260)*0.7)||220;
-        const config={fps:12,qrbox:{width:box,height:box}};
-        const camMode=forcarFrontal?{facingMode:"user"}:{facingMode:"environment"};
-        await __qr.start(camMode,config,(txt)=>{
-          if(!txt)return;
-          const t=$(__qrTarget);
-          if(t&&t.tagName==="SELECT"){
-            const op=Array.from(t.options).find(o=>o.value===txt||o.text.startsWith(txt));
-            if(op){t.value=op.value;toastMsg("✅ Item lido: "+op.value);}else{toastMsg("Código lido: "+txt+" (não encontrado no catálogo).");}
-          }else if(t){t.value=txt;toastMsg("✅ Código lido: "+txt);}
-          fecharScanner();
-        },()=>{});
+        const camMode=forcarFrontal?{facingMode:"user"}:{facingMode:{exact:"environment"}};
+        await __qr.start(camMode,config,onSuccess,()=>{});
         $("scannerErro").style.display="none";
         $("btnVirarCam").style.display="inline-flex";
-      }catch(e){
-        $("scannerErro").style.display="block";
-        $("scannerErro").textContent="Câmera não disponível. Verifique a permissão no navegador e tente novamente.";
-        $("btnVirarCam").style.display="none";
+        return;
+      }catch(e1){
+        // Fallback 1: facingMode sem "exact" (qualquer câmera traseira/frontal)
+        try{
+          if(__qr){try{await __qr.stop();}catch(e){} __qr=null;}
+          __qr=new Html5Qrcode("leitorCam");
+          await __qr.start({facingMode:forcarFrontal?"user":"environment"},config,onSuccess,()=>{});
+          $("scannerErro").style.display="none";
+          $("btnVirarCam").style.display="inline-flex";
+          return;
+        }catch(e2){
+          // Fallback 2: enumera câmeras e usa a primeira disponível
+          try{
+            const cams=await Html5Qrcode.getCameras();
+            if(cams && cams.length){
+              if(__qr){try{await __qr.stop();}catch(e){} __qr=null;}
+              __qr=new Html5Qrcode("leitorCam");
+              await __qr.start(cams[0].id,config,onSuccess,()=>{});
+              $("scannerErro").style.display="none";
+              $("btnVirarCam").style.display="inline-flex";
+              return;
+            }
+            throw new Error("Sem câmeras detectadas");
+          }catch(e3){
+            const msg=(e3&&e3.message)||(e2&&e2.message)||(e1&&e1.message)||"erro desconhecido";
+            $("scannerErro").style.display="block";
+            $("scannerErro").textContent="Câmera indisponível ("+msg+"). Verifique a permissão no navegador e se o site está em HTTPS.";
+            $("btnVirarCam").style.display="none";
+          }
+        }
       }
     }
     function virarCamera(){_iniciarCamera(__qrCamFrontal=!__qrCamFrontal);}
