@@ -757,11 +757,26 @@
       if(txt&&$("paStarTxt"))$("paStarTxt").textContent=txt;
       if(sub&&$("paStarSub"))$("paStarSub").textContent=sub;
     }
-    // fetch com application/json: o Power Automate separa os campos (codigo, qtd...)
-    // e devolve resposta. Os endpoints novos "direct" do Power Automate aceitam CORS,
-    // então funciona tanto local quanto no GitHub Pages (https).
+    // Mapeia os campos internos para os nomes exatos esperados pelo Power Automate
+    function buildPayload(reg){
+      const d=new Date(reg.data||Date.now());
+      return {
+        Data:       d.toLocaleDateString("pt-BR"),
+        Hora:       d.toLocaleTimeString("pt-BR"),
+        Operador:   reg.operador||"",
+        Codigo:     reg.codigo||"",
+        Descricao:  reg.descricao||"",
+        Tipo:       reg.tipo||"",
+        Quantidade: reg.qtd??0,
+        Saldo:      reg.saldo??0,
+        EstoqueSeg: reg.estoqueSeg??0,
+        PontoPedido:reg.pontoPedido??0,
+        Status:     reg.status||"",
+        Origem:     reg.origem||"Site"
+      };
+    }
     function postWebhook(reg){
-      const corpo=JSON.stringify(reg);
+      const corpo=JSON.stringify(buildPayload(reg));
       return new Promise(resolve=>{
         fetch(WEBHOOK_URL,{method:"POST",headers:{"Content-Type":"application/json"},body:corpo})
           .then(r=>resolve({sent:true,confirmed:r.ok,status:r.status}))
@@ -783,8 +798,10 @@
       setStar("send","Enviando ao Excel...","Power Automate");
       Promise.allSettled(pend.map(r=>postWebhook(r))).then(res=>{
         const vals=res.map(x=>x.status==="fulfilled"?x.value:{sent:false,confirmed:false});
-        const ok=vals.filter(v=>v&&v.sent).length;
-        if(ok>0){ fila=fila.slice(ok); salvarFila();
+        const sentIdx=new Set(vals.map((v,i)=>v&&v.sent?i:-1).filter(i=>i>=0));
+        fila=fila.filter((_,i)=>!sentIdx.has(i));
+        const ok=sentIdx.size;
+        if(ok>0){ salvarFila();
           const hora=new Date().toLocaleTimeString("pt-BR");
           setStatusSync("🟪⭐ "+ok+" lançamento(s) enviado(s) à planilha · "+hora,"#065f46");
           setConn("on","Online · Excel ⭐");
@@ -798,6 +815,9 @@
           toastMsg("Sem internet agora: salvo na fila, reenvia automático."); }
         enviando=false;atualizarFila();
         if(fila.length&&ok>0) flushFila();
+      }).catch(err=>{
+        console.error("flushFila crítico:",err);
+        enviando=false;atualizarFila();
       });
     }
     function atualizarFila(){const n=fila.length;const c=$("filaCard");if(!c)return;c.classList.toggle("zero",n===0);$("filaNum").textContent=n;}
@@ -1103,7 +1123,7 @@
       flushFila();
       tickClock();setInterval(tickClock,1000);
       if(operador){$("nomeUsuario").value=operador;verSenha();}
-      try{const u=localStorage.getItem(STORE+"_unidade")||"";if(u)$("unidadeUsuario").value=u;}catch(e){}
+      try{const u=localStorage.getItem(STORE+"_unidade")||"";if(u){$("unidadeUsuario").value=u;unidade=u;}}catch(e){}
       atualizarFila();
       $("nomeUsuario").addEventListener("keydown",e=>{if(e.key==="Enter")entrar()});
       $("senhaUsuario").addEventListener("keydown",e=>{if(e.key==="Enter")entrar()});
