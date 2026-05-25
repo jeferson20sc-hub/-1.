@@ -802,16 +802,29 @@
       };
     }
     function postWebhook(reg){
-      const corpo=JSON.stringify(buildPayload(reg));
+      const payload=buildPayload(reg);
+      const corpo=JSON.stringify(payload);
+      const tag=reg && (reg.id || "(sem id)");
+      try{console.log("[PA → enviando]", tag, payload);}catch(e){}
       return new Promise(resolve=>{
         fetch(WEBHOOK_URL,{method:"POST",headers:{"Content-Type":"application/json"},body:corpo})
-          .then(r=>resolve({sent:true,confirmed:r.ok,status:r.status}))
-          .catch(()=>resolve({sent:false,confirmed:false,status:-1}));
+          .then(r=>r.text().then(t=>({r,t})))
+          .then(({r,t})=>{
+            try{console.log("[PA ← resposta]", tag, "HTTP", r.status, t && t.slice(0,500));}catch(e){}
+            resolve({sent:true, confirmed:r.ok, status:r.status, body:t});
+          })
+          .catch(err=>{
+            try{console.warn("[PA ✗ falha rede]", tag, err && err.message);}catch(e){}
+            resolve({sent:false, confirmed:false, status:-1, body:String(err && err.message || err)});
+          });
       });
     }
     function enviarWebhook(reg){
       if(!WEBHOOK_URL || !WEBHOOK_URL.trim()){setStatusSync("Modo local (sem URL configurada).");setConn("off","Modo local");return;}
-      if(reg) fila.push(reg);
+      if(reg){
+        if(!reg.tentativas) reg.tentativas=0;
+        fila.push(reg);
+      }
       salvarFila();
       flushFila();
     }
@@ -822,24 +835,55 @@
       const pend=fila.slice();
       setStar("send","Enviando ao Excel...","Power Automate");
       Promise.allSettled(pend.map(r=>postWebhook(r))).then(res=>{
-        const vals=res.map(x=>x.status==="fulfilled"?x.value:{sent:false,confirmed:false});
-        const sentIdx=new Set(vals.map((v,i)=>v&&v.sent?i:-1).filter(i=>i>=0));
-        fila=fila.filter((_,i)=>!sentIdx.has(i));
-        const ok=sentIdx.size;
-        if(ok>0){ salvarFila();
-          const hora=new Date().toLocaleTimeString("pt-BR");
-          setStatusSync("🟪⭐ "+ok+" lançamento(s) enviado(s) à planilha · "+hora,"#065f46");
+        const vals=res.map(x=>x.status==="fulfilled"?x.value:{sent:false,confirmed:false,status:-1,body:""});
+        // ✔ Só remove da fila quando o Power Automate confirmou 2xx.
+        const okIdx     = new Set(vals.map((v,i)=>v&&v.confirmed?i:-1).filter(i=>i>=0));
+        // Erros HTTP "definitivos" (4xx exceto 408/429): incrementa tentativa e
+        // descarta após 3 falhas pra não inchar a fila.
+        const dropIdx   = new Set();
+        let httpErroMsg = "";
+        vals.forEach((v,i)=>{
+          if(okIdx.has(i)) return;
+          if(v.sent && v.status>=400 && v.status<500 && v.status!==408 && v.status!==429){
+            pend[i].tentativas=(pend[i].tentativas||0)+1;
+            httpErroMsg = "HTTP "+v.status+(v.body?" · "+String(v.body).slice(0,140):"");
+            if(pend[i].tentativas>=3) dropIdx.add(i);
+          }
+        });
+        const removeIdx = new Set([...okIdx,...dropIdx]);
+        fila = fila.filter((_,i)=>!removeIdx.has(i));
+        const ok=okIdx.size, descartados=dropIdx.size, restam=fila.length;
+        salvarFila();
+        const hora=new Date().toLocaleTimeString("pt-BR");
+        if(ok>0){
+          setStatusSync("🟪⭐ "+ok+" lançamento(s) gravado(s) na planilha · "+hora,"#065f46");
           setConn("on","Online · Excel ⭐");
           setStar("ok","🟪⭐ Lançado na planilha!","Power Automate · "+hora);
           if(!window.__okAlert){window.__okAlert=true;abrirModal("🟪⭐ Sucesso!","Dados enviados para a planilha do Excel online!");setTimeout(()=>fecharModal("Conectado","Power Automate gravando na planilha."),1600);}
           clearTimeout(window.__star);window.__star=setTimeout(()=>setStar(null,"Power Automate conectado","Enviando p/ Excel online"),4000);
-          toastMsg(ok+" lançamento(s) enviados ao Excel."); }
-        else { setStatusSync("⚠ Sem conexão. "+fila.length+" na fila — reenvia sozinho depois.","#991b1b");
-          setConn("err","Sem conexão · "+fila.length+" na fila");
-          setStar(null,"Power Automate conectado",fila.length+" na fila (reenvia só)");
-          toastMsg("Sem internet agora: salvo na fila, reenvia automático."); }
+          toastMsg(ok+" lançamento(s) enviados ao Excel.");
+        }
+        if(descartados>0){
+          setStatusSync("⛔ "+descartados+" lançamento(s) descartado(s) após 3 falhas ("+httpErroMsg+"). Veja o console (F12).","#991b1b");
+          setConn("err","Power Automate rejeitou · veja F12");
+          setStar(null,"Power Automate respondeu erro","Abra F12 → Console e veja [PA ← resposta]");
+          abrirModal("⚠ Power Automate rejeitou o envio","Resposta do fluxo: "+httpErroMsg+"\n\nAbra o histórico de execuções do fluxo para ver o erro detalhado.");
+          setTimeout(()=>fecharModal("Verifique o fluxo","Veja a aba 'Histórico' no Power Automate."),3500);
+        } else if(ok===0 && restam>0){
+          if(httpErroMsg){
+            setStatusSync("⚠ Power Automate respondeu erro ("+httpErroMsg+"). "+restam+" na fila, reenviando…","#991b1b");
+            setConn("err","Erro PA · "+restam+" na fila");
+            setStar(null,"Power Automate respondeu erro",httpErroMsg);
+            toastMsg("Power Automate rejeitou: "+httpErroMsg);
+          } else {
+            setStatusSync("⚠ Sem conexão. "+restam+" na fila — reenvia sozinho depois.","#991b1b");
+            setConn("err","Sem conexão · "+restam+" na fila");
+            setStar(null,"Power Automate conectado",restam+" na fila (reenvia só)");
+            toastMsg("Sem internet agora: salvo na fila, reenvia automático.");
+          }
+        }
         enviando=false;atualizarFila();
-        if(fila.length&&ok>0) flushFila();
+        if(fila.length && ok>0) flushFila();
       }).catch(err=>{
         console.error("flushFila crítico:",err);
         enviando=false;atualizarFila();
@@ -848,14 +892,37 @@
     function atualizarFila(){const n=fila.length;const c=$("filaCard");if(!c)return;c.classList.toggle("zero",n===0);$("filaNum").textContent=n;}
     function testarConexao(){
       if(!WEBHOOK_URL.trim()){toastMsg("Nenhuma URL do Power Automate configurada.");return;}
-      setStatusSync("Testando conexão com o Power Automate...","#92400e");
+      setStatusSync("Testando conexão (ping 000 + lançamento real simulado 001)…","#92400e");
       setStar("send","Testando conexão...","Power Automate");
       const ag=new Date();
       const ping={id:"LIS-TESTE-"+ag.getTime(),text:"PING de teste do site",data:ag.toISOString(),dataBR:ag.toLocaleString("pt-BR"),operador:operador||"Teste",codigo:"000",descricao:"Teste de conexão",tipo:"Entrada",qtd:0,saldo:0,estoqueSeg:0,pontoPedido:0,status:"🟢 OK",origem:"Teste",site:SITE_URL};
-      postWebhook(ping).then(r=>{
-        if(r&&r.confirmed){setStatusSync("✔ Power Automate respondeu OK (HTTP "+r.status+"). A linha 000 deve estar na aba Lançamentos.","#065f46");setConn("on","Online · Excel ✔");setStar("ok","Conexão confirmada ✔","HTTP "+r.status+" · veja a linha 000");clearTimeout(window.__star);window.__star=setTimeout(()=>setStar(null,"Power Automate conectado","Enviando p/ Excel online"),6000);toastMsg("Conexão OK! Veja a linha 000 no Excel.");}
-        else if(r&&r.sent){setStatusSync("➤ Requisição enviada (sem confirmação do navegador). Se a linha 000 NÃO aparecer, o ajuste é no fluxo do Power Automate.","#92400e");setConn("on","Enviado · confira Excel");setStar("ok","Teste enviado","Confira a linha 000 no Excel");clearTimeout(window.__star);window.__star=setTimeout(()=>setStar(null,"Power Automate conectado","Enviando p/ Excel online"),6000);toastMsg("Teste enviado. Confira a linha 000 no Excel.");}
-        else{setStatusSync("⚠ Falha de rede ao chamar o Power Automate.","#991b1b");setConn("err","Sem conexão");setStar(null,"Power Automate conectado","Falha de rede no teste");toastMsg("Falhou: sem rede ou URL inválida.");}
+      // Lançamento "real" simulado: serve pra provar se o fluxo aceita os mesmos
+      // campos que um Entrada/Saída de verdade envia.
+      const fake={id:"LIS-TESTEREAL-"+ag.getTime(),text:"Lançamento real simulado",data:ag.toISOString(),dataBR:ag.toLocaleString("pt-BR"),operador:operador||"Teste",codigo:"001",descricao:"Filtro de óleo (loja de peças)",tipo:"Entrada",qtd:5,saldo:5,estoqueSeg:40,pontoPedido:140,status:"🟢 OK",origem:"Teste-Real",site:SITE_URL};
+      Promise.all([postWebhook(ping),postWebhook(fake)]).then(([r1,r2])=>{
+        const linha=(tag,r)=> tag+": "+(r.confirmed?"✔ HTTP "+r.status:(r.sent?"⚠ HTTP "+r.status+(r.body?" "+String(r.body).slice(0,120):""):"✗ sem rede"));
+        const txt=linha("PING(000)",r1)+" · "+linha("REAL(001)",r2);
+        console.log("[Teste conexão]",txt);
+        if(r1.confirmed && r2.confirmed){
+          setStatusSync("✔ Ambos confirmados ("+txt+"). Veja linhas 000 e 001 na planilha.","#065f46");
+          setConn("on","Online · Excel ✔");setStar("ok","Conexão 100% OK ✔","Linhas 000 e 001 na planilha");
+          abrirModal("✅ Conexão perfeita","PING(000) e lançamento real(001) confirmados.\nDevem aparecer 2 linhas novas na planilha.");
+          setTimeout(()=>fecharModal("Conectado","Power Automate gravando."),2200);
+        } else if(r1.confirmed && !r2.confirmed){
+          setStatusSync("⚠ Só o PING passou. O lançamento REAL foi rejeitado. ("+txt+")","#991b1b");
+          setConn("err","Fluxo rejeita lançamento real");setStar(null,"Fluxo rejeita lançamento real","Veja F12 → Console e o histórico do fluxo");
+          abrirModal("⚠ Diagnóstico","O PING (000) passou, mas um lançamento real (001) foi rejeitado pelo fluxo. Resposta:\n"+(r2.body||"(sem corpo)")+"\n\nAbra o Power Automate → Histórico de execuções e veja qual passo falhou.");
+          setTimeout(()=>fecharModal("Verifique o fluxo","Histórico no Power Automate."),4500);
+        } else if(!r1.sent && !r2.sent){
+          setStatusSync("⚠ Falha de rede ao chamar o Power Automate.","#991b1b");
+          setConn("err","Sem conexão");setStar(null,"Power Automate","Falha de rede no teste");
+          toastMsg("Falhou: sem rede ou URL inválida.");
+        } else {
+          setStatusSync("⚠ Resposta inesperada: "+txt+" — veja F12 → Console.","#991b1b");
+          setConn("err","Resposta inesperada");setStar(null,"Power Automate",txt);
+          toastMsg("Resposta inesperada — veja o console (F12).");
+        }
+        clearTimeout(window.__star);window.__star=setTimeout(()=>setStar(null,"Power Automate conectado","Enviando p/ Excel online"),8000);
       });
     }
 
