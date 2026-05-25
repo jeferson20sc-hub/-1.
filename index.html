@@ -757,22 +757,48 @@
       if(txt&&$("paStarTxt"))$("paStarTxt").textContent=txt;
       if(sub&&$("paStarSub"))$("paStarSub").textContent=sub;
     }
-    // Mapeia os campos internos para os nomes exatos esperados pelo Power Automate
+    // Mapeia os campos para o schema EXATO do gatilho HTTP do Power Automate
+    // (propriedades em minúsculas: id, data, dataBR, operador, codigo, descricao,
+    // tipo, qtd, saldo, estoqueSeg, pontoPedido, status, origem).
+    // Também envia aliases em PascalCase para tolerar mapeamentos antigos do fluxo.
     function buildPayload(reg){
       const d=new Date(reg.data||Date.now());
+      const dataISO   = d.toISOString();
+      const dataBR    = d.toLocaleString("pt-BR");
+      const dataCurta = d.toLocaleDateString("pt-BR");
+      const horaCurta = d.toLocaleTimeString("pt-BR");
+      const id        = reg.id || ("LIS-"+d.getTime());
+      const operador  = reg.operador || "";
+      const codigo    = reg.codigo   || "";
+      const descricao = reg.descricao|| "";
+      const tipo      = reg.tipo     || "";
+      const qtd       = Number(reg.qtd        ?? 0) || 0;
+      const saldo     = Number(reg.saldo      ?? 0) || 0;
+      const estoqueSeg= Number(reg.estoqueSeg ?? 0) || 0;
+      const pontoPed  = Number(reg.pontoPedido?? 0) || 0;
+      const status    = reg.status || "";
+      const origem    = reg.origem || "Site";
       return {
-        Data:       d.toLocaleDateString("pt-BR"),
-        Hora:       d.toLocaleTimeString("pt-BR"),
-        Operador:   reg.operador||"",
-        Codigo:     reg.codigo||"",
-        Descricao:  reg.descricao||"",
-        Tipo:       reg.tipo||"",
-        Quantidade: reg.qtd??0,
-        Saldo:      reg.saldo??0,
-        EstoqueSeg: reg.estoqueSeg??0,
-        PontoPedido:reg.pontoPedido??0,
-        Status:     reg.status||"",
-        Origem:     reg.origem||"Site"
+        // ⚠️ Schema esperado pelo gatilho HTTP do Power Automate (minúsculas)
+        id, data:dataISO, dataBR,
+        operador, codigo, descricao, tipo,
+        qtd, saldo, estoqueSeg, pontoPedido:pontoPed,
+        status, origem,
+        // Aliases (PascalCase / nomes da tabela Excel) — tolerância p/ mapeamentos antigos
+        ID: id,
+        Data: dataCurta,
+        Hora: horaCurta,
+        DataHora: dataBR,
+        Operador: operador,
+        Codigo: codigo,
+        Descricao: descricao,
+        Tipo: tipo,
+        Quantidade: qtd,
+        Saldo: saldo,
+        EstoqueSeg: estoqueSeg,
+        PontoPedido: pontoPed,
+        Status: status,
+        Origem: origem
       };
     }
     function postWebhook(reg){
