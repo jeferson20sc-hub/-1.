@@ -936,9 +936,26 @@
     let __qr=null, __qrTarget=null;
     async function abrirScanner(targetId){
       __qrTarget=targetId;
-      try{
-        if(!window.Html5Qrcode) await loadScript("https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.10/html5-qrcode.min.js");
-      }catch(e){toastMsg("Não foi possível carregar o leitor — verifique sua internet.");return}
+      if(!location.protocol.startsWith("https")&&location.hostname!=="localhost"&&location.hostname!=="127.0.0.1"){
+        toastMsg("O leitor exige HTTPS. Abra o site pelo endereço https://… no celular.");return;
+      }
+      if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){
+        toastMsg("Este navegador não permite acesso à câmera. Use Chrome/Edge no celular.");return;
+      }
+      if(!window.Html5Qrcode){
+        toastMsg("Carregando leitor…");
+        try{
+          await loadScriptAny([
+            "https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.10/html5-qrcode.min.js",
+            "https://unpkg.com/html5-qrcode@2.3.10/html5-qrcode.min.js",
+            "https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"
+          ],"Html5Qrcode");
+        }catch(e){
+          console.error("Falha ao carregar Html5Qrcode:",e);
+          toastMsg("Não foi possível carregar o leitor. Verifique se o site está em HTTPS e tente de novo (rede pode estar bloqueando CDNs).");
+          return;
+        }
+      }
       $("scannerModal").classList.add("on");
       const el=document.getElementById("leitorCam");
       el.innerHTML="";
@@ -1006,9 +1023,19 @@
     // ===== Exportar relatório em PDF =====
     async function exportarPDF(){
       try{
-        if(!window.jspdf) await loadScript("https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js");
-        if(!window.__autoTable){ await loadScript("https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.4/dist/jspdf.plugin.autotable.min.js"); window.__autoTable=true; }
-      }catch(e){toastMsg("Falha ao carregar gerador de PDF (sem internet?).");return}
+        if(!window.jspdf) await loadScriptAny([
+          "https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js",
+          "https://unpkg.com/jspdf@2.5.2/dist/jspdf.umd.min.js",
+          "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.2/jspdf.umd.min.js"
+        ],"jspdf");
+        if(!window.__autoTable){
+          await loadScriptAny([
+            "https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.4/dist/jspdf.plugin.autotable.min.js",
+            "https://unpkg.com/jspdf-autotable@3.8.4/dist/jspdf.plugin.autotable.min.js"
+          ]);
+          window.__autoTable=true;
+        }
+      }catch(e){console.error(e);toastMsg("Falha ao carregar gerador de PDF (CDNs bloqueadas?).");return}
       const {jsPDF}=window.jspdf;
       const doc=new jsPDF({unit:"pt",format:"a4"});
       const W=doc.internal.pageSize.getWidth(),M=40;
@@ -1207,6 +1234,16 @@
     function renderTudo(){renderRecentes();renderControle();renderDash()}
 
     function loadScript(src){return new Promise((ok,err)=>{const s=document.createElement("script");s.src=src;s.onload=ok;s.onerror=err;document.head.appendChild(s)})}
+    // Tenta vários CDNs em sequência (alguns ambientes bloqueiam jsdelivr).
+    async function loadScriptAny(srcs, checkGlobal){
+      for(const src of srcs){
+        try{
+          await loadScript(src);
+          if(!checkGlobal || window[checkGlobal]) return src;
+        }catch(e){ /* tenta o próximo */ }
+      }
+      throw new Error("Nenhum CDN respondeu para: "+(checkGlobal||srcs[0]));
+    }
     async function exportarExcel(){
       const calc=[["ITEM","CENÁRIO","CONSUMO (C)","TEMPO REP. (TR)","K ou ES","ES","PP","MEMÓRIA DE CÁLCULO"],
         ...ITEMS.map(i=>[i.cod,i.cen,i.c,i.tr,i.kes,i.ES,i.PP,i.mem])];
@@ -1218,7 +1255,11 @@
         ...ITEMS.map(i=>{const s=i.entrada-i.saida,st=statusOf(i);return [i.cod,i.desc,s,i.ES,i.PP,(i.PP?Math.round(s/i.PP*100):0)+"%",(i.ES?(s/i.ES).toFixed(2):"-")+"×",st==="ok"?"🟢 OK":st==="pedir"?"🟡 PEDIR":"🔴 CRÍTICO"]})];
       const movS=[["DATA/HORA","OPERADOR","CÓDIGO","DESCRIÇÃO","TIPO","QTD"],...mov.map(m=>[m.data,m.operador,m.codigo,m.descricao,m.tipo,m.qtd])];
       try{
-        if(!window.XLSX) await loadScript("https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js");
+        if(!window.XLSX) await loadScriptAny([
+          "https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js",
+          "https://cdn.jsdelivr.net/npm/xlsx@0.20.3/dist/xlsx.full.min.js",
+          "https://unpkg.com/xlsx@0.20.3/dist/xlsx.full.min.js"
+        ],"XLSX");
         const wb=XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(calc),"Cálculos");
         XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(ctrl),"Controle de Estoque");
